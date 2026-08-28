@@ -198,13 +198,6 @@ export default function Login() {
             </div>
             <button
               type="button"
-              className="oauth-btn google"
-              onClick={() => handleOAuth('google')}
-            >
-              Continue with Google
-            </button>
-            <button
-              type="button"
               className="oauth-btn github"
               onClick={() => handleOAuth('github')}
             >

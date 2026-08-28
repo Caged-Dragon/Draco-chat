@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
-export default function ChatWindow({ friend }) {
+export default function ChatWindow({ friend, onBack }) {
   const { user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
@@ -71,7 +71,12 @@ export default function ChatWindow({ friend }) {
 
   return (
     <div className="chat-window">
-      <div className="chat-header">{friend.username}</div>
+      <div className="chat-header">
+        <button className="back-btn" onClick={onBack} aria-label="Back to friends list">
+          ←
+        </button>
+        <span>{friend.username}</span>
+      </div>
 
       <div className="chat-messages">
         {messages.map((m) => (

@@ -12,8 +12,12 @@ export default function Dashboard() {
   const [refreshKey, setRefreshKey] = useState(0);
   const bump = () => setRefreshKey((k) => k + 1);
 
+  // On mobile, "chat-open" swaps from the friends list to the full-screen
+  // chat window. On desktop this class has no visual effect (see CSS).
+  const shellClass = `app-shell${activeFriend ? ' chat-open' : ''}`;
+
   return (
-    <div className="app-shell">
+    <div className={shellClass}>
       <aside className="sidebar">
         <div className="sidebar-header">
           <div className="brand">
@@ -38,7 +42,7 @@ export default function Dashboard() {
 
       <main className="chat-area">
         {activeFriend ? (
-          <ChatWindow friend={activeFriend} />
+          <ChatWindow friend={activeFriend} onBack={() => setActiveFriend(null)} />
         ) : (
           <div className="center-screen dim">Select a friend to start chatting</div>
         )}

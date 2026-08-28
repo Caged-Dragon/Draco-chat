@@ -152,11 +152,6 @@ body {
   background: var(--panel-alt);
 }
 
-.oauth-btn.google {
-  border-color: #4285f4;
-  color: #4285f4;
-}
-
 .oauth-btn.github {
   border-color: #24292e;
   color: #24292e;
@@ -431,6 +426,20 @@ body {
   font-weight: 800;
   background: var(--panel);
   color: var(--purple);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.back-btn {
+  display: none;
+  border: none;
+  background: none;
+  color: var(--purple);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
 }
 
 .chat-messages {
@@ -502,4 +511,78 @@ body {
 
 .chat-input button:hover {
   filter: brightness(1.08);
+}
+
+/* ============================================================
+   MOBILE LAYOUT (phones / narrow tablets)
+   Desktop keeps the sidebar + chat side by side. On mobile,
+   only one screen shows at a time — the friends list, or a
+   full-screen chat with a back button — like a typical
+   messaging app.
+   ============================================================ */
+@media (max-width: 768px) {
+  .center-screen {
+    padding: 16px;
+  }
+
+  .auth-card {
+    width: 100%;
+    max-width: 340px;
+  }
+
+  .app-shell {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .sidebar {
+    width: 100%;
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    transition: transform 0.25s ease;
+  }
+
+  .chat-area {
+    width: 100%;
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+  }
+
+  /* Dashboard adds "chat-open" to .app-shell once a friend is selected */
+  .app-shell.chat-open .sidebar {
+    transform: translateX(-100%);
+  }
+
+  .app-shell.chat-open .chat-area {
+    transform: translateX(0);
+  }
+
+  .back-btn {
+    display: inline-flex;
+  }
+
+  /* Slightly larger tap targets and inputs on touch screens */
+  .friends-list li,
+  .friend-requests li,
+  .search-results li {
+    padding: 12px 14px;
+  }
+
+  .chat-input input {
+    font-size: 16px;
+    /* prevents iOS Safari auto-zoom on focus */
+  }
+
+  .bubble {
+    max-width: 78%;
+  }
+
+  .sidebar-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
 }
