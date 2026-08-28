@@ -1,0 +1,75 @@
+import { useEffect, useState } from 'react';
+import { supabase } from '../supabaseClient';
+import { useAuth } from '../contexts/AuthContext.jsx';
+
+export default function FriendRequests({ refreshKey, onChange }) {
+  const { user } = useAuth();
+  const [requests, setRequests] = useState([]);
+
+  useEffect(() => {
+    loadRequests();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey, user]);
+
+  async function loadRequests() {
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('friendships')
+      .select('id, requester:profiles!friendships_requester_id_fkey(id, username)')
+      .eq('addressee_id', user.id)
+      .eq('status', 'pending');
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+    setRequests(data);
+  }
+
+  async function accept(id) {
+    const { error } = await supabase
+      .from('friendships')
+      .update({ status: 'accepted' })
+      .eq('id', id);
+    if (error) {
+      console.error(error);
+      return;
+    }
+    setRequests((prev) => prev.filter((r) => r.id !== id));
+    onChange?.();
+  }
+
+  async function decline(id) {
+    const { error } = await supabase.from('friendships').delete().eq('id', id);
+    if (error) {
+      console.error(error);
+      return;
+    }
+    setRequests((prev) => prev.filter((r) => r.id !== id));
+    onChange?.();
+  }
+
+  if (requests.length === 0) return null;
+
+  return (
+    <div className="friend-requests">
+      <h3>Friend requests</h3>
+      <ul>
+        {requests.map((r) => (
+          <li key={r.id}>
+            <span>{r.requester.username}</span>
+            <div className="request-actions">
+              <button className="accept-btn" onClick={() => accept(r.id)}>
+                Accept
+              </button>
+              <button className="decline-btn" onClick={() => decline(r.id)}>
+                Decline
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
