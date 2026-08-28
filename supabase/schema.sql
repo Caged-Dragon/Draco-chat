@@ -26,16 +26,41 @@ on public.profiles for update
 to authenticated
 using (auth.uid() = id);
 
--- Auto-create a profile row whenever a new user signs up
+-- Auto-create a profile row whenever a new user signs up.
+-- Handles email/password signups (which pass a chosen "username") and
+-- OAuth signups (Google/GitHub, which don't) by falling back to the
+-- provider's name/email, and retries with a random suffix if that
+-- username is already taken.
 create or replace function public.handle_new_user()
 returns trigger as $$
+declare
+  base_username text;
+  final_username text;
 begin
-  insert into public.profiles (id, username, email)
-  values (
-    new.id,
-    coalesce(new.raw_user_meta_data->>'username', split_part(new.email, '@', 1)),
-    new.email
+  base_username := coalesce(
+    new.raw_user_meta_data->>'username',
+    new.raw_user_meta_data->>'user_name',
+    new.raw_user_meta_data->>'full_name',
+    split_part(new.email, '@', 1)
   );
+  -- Strip anything that isn't alphanumeric/underscore, keep it short
+  base_username := regexp_replace(base_username, '[^a-zA-Z0-9_]', '', 'g');
+  if base_username = '' or base_username is null then
+    base_username := 'user';
+  end if;
+  final_username := base_username;
+
+  loop
+    begin
+      insert into public.profiles (id, username, email)
+      values (new.id, final_username, new.email);
+      exit;
+    exception when unique_violation then
+      -- Username taken — try again with a random 4-digit suffix
+      final_username := base_username || floor(random() * 9000 + 1000)::text;
+    end;
+  end loop;
+
   return new;
 end;
 $$ language plpgsql security definer;

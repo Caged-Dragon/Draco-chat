@@ -118,6 +118,50 @@ body {
   cursor: default;
 }
 
+.divider {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-dim);
+  font-size: 12px;
+  margin: 2px 0;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.oauth-btn {
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  border: 1.5px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.oauth-btn:hover {
+  background: var(--panel-alt);
+}
+
+.oauth-btn.google {
+  border-color: #4285f4;
+  color: #4285f4;
+}
+
+.oauth-btn.github {
+  border-color: #24292e;
+  color: #24292e;
+}
+
 .switch-mode {
   font-size: 13px;
   text-align: center;
