@@ -3,14 +3,16 @@
 }
 
 :root {
-  --bg: #0d0d10;
-  --panel: #161618;
-  --panel-alt: #1e1e21;
-  --border: #2a2a2e;
-  --red: #dc2626;
-  --red-bright: #ef4444;
-  --text: #f2f2f2;
-  --text-dim: #9a9a9f;
+  --bg: #f6f3ff;
+  --panel: #ffffff;
+  --panel-alt: #f3eefc;
+  --border: #e6def7;
+  --red: #ef4444;
+  --orange: #f97316;
+  --purple: #8b5cf6;
+  --gradient: linear-gradient(135deg, #ef4444 0%, #f97316 50%, #8b5cf6 100%);
+  --text: #241a3d;
+  --text-dim: #7c718f;
 }
 
 body {
@@ -27,6 +29,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 16px;
+  background: linear-gradient(160deg, #fff0e6 0%, #f6f3ff 45%, #ede4ff 100%);
 }
 
 .dim {
@@ -38,8 +41,8 @@ body {
   background: var(--panel);
   border: 1px solid var(--border);
   padding: 32px;
-  border-radius: 14px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  border-radius: 18px;
+  box-shadow: 0 12px 40px rgba(139, 92, 246, 0.18);
   width: 320px;
   display: flex;
   flex-direction: column;
@@ -48,16 +51,22 @@ body {
 }
 
 .auth-logo {
-  width: 72px;
-  height: 72px;
+  width: 76px;
+  height: 76px;
   object-fit: contain;
   margin-bottom: 4px;
+  filter: drop-shadow(0 4px 12px rgba(239, 68, 68, 0.35));
 }
 
 .auth-card h1 {
   margin: 0;
   font-size: 22px;
   align-self: center;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-weight: 800;
 }
 
 .tagline {
@@ -66,16 +75,22 @@ body {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-dim);
+  font-weight: 600;
 }
 
 .auth-card input {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
   font-size: 14px;
   background: var(--panel-alt);
   color: var(--text);
+}
+
+.auth-card input:focus {
+  outline: none;
+  border-color: var(--purple);
 }
 
 .auth-card input::placeholder {
@@ -84,17 +99,18 @@ body {
 
 .auth-card button {
   width: 100%;
-  padding: 10px;
+  padding: 11px;
   border: none;
-  border-radius: 8px;
-  background: var(--red);
+  border-radius: 10px;
+  background: var(--gradient);
   color: white;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
+  box-shadow: 0 6px 16px rgba(239, 68, 68, 0.3);
 }
 
 .auth-card button:hover:not(:disabled) {
-  background: var(--red-bright);
+  filter: brightness(1.08);
 }
 
 .auth-card button:disabled {
@@ -109,27 +125,30 @@ body {
 }
 
 .switch-mode span {
-  color: var(--red-bright);
+  color: var(--purple);
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .studio-credit {
   font-size: 12px;
   color: var(--text-dim);
   letter-spacing: 0.03em;
+  font-weight: 600;
 }
 
 .error-text {
-  color: #f87171;
+  color: #dc2626;
   font-size: 13px;
   margin: 0;
+  font-weight: 600;
 }
 
 .info-text {
-  color: #4ade80;
+  color: #16a34a;
   font-size: 13px;
   margin: 0;
+  font-weight: 600;
 }
 
 .small {
@@ -166,8 +185,8 @@ body {
 }
 
 .brand-logo {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   object-fit: contain;
 }
 
@@ -175,22 +194,28 @@ body {
   font-weight: 800;
   letter-spacing: 0.02em;
   font-size: 16px;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .me-row {
   font-size: 12px;
   color: var(--text-dim);
   margin-top: -8px;
+  font-weight: 600;
 }
 
 .logout-btn {
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border);
   background: none;
-  color: var(--red-bright);
+  color: var(--red);
   cursor: pointer;
   font-size: 12px;
+  font-weight: 700;
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 
 .logout-btn:hover {
@@ -200,12 +225,17 @@ body {
 /* --- Search --- */
 .search-friends input {
   width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  padding: 9px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
   font-size: 14px;
   background: var(--panel-alt);
   color: var(--text);
+}
+
+.search-friends input:focus {
+  outline: none;
+  border-color: var(--orange);
 }
 
 .search-results {
@@ -222,30 +252,35 @@ body {
   justify-content: space-between;
   align-items: center;
   font-size: 14px;
+  background: var(--panel-alt);
+  padding: 6px 10px;
+  border-radius: 8px;
 }
 
 .search-results button {
   border: none;
-  background: rgba(220, 38, 38, 0.15);
-  color: var(--red-bright);
-  padding: 4px 10px;
-  border-radius: 6px;
+  background: var(--gradient);
+  color: white;
+  padding: 5px 12px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 12px;
+  font-weight: 700;
 }
 
 .search-results button:hover {
-  background: rgba(220, 38, 38, 0.28);
+  filter: brightness(1.08);
 }
 
 /* --- Friend requests --- */
 .friend-requests h3,
 .friends-list h3 {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: 12px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-dim);
+  letter-spacing: 0.06em;
+  color: var(--purple);
+  font-weight: 800;
 }
 
 .friend-requests ul {
@@ -263,8 +298,9 @@ body {
   align-items: center;
   font-size: 14px;
   background: var(--panel-alt);
+  border: 1px solid var(--border);
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 .request-actions {
@@ -275,29 +311,31 @@ body {
 .accept-btn,
 .decline-btn {
   border: none;
-  padding: 4px 10px;
-  border-radius: 6px;
+  padding: 5px 10px;
+  border-radius: 8px;
   font-size: 12px;
+  font-weight: 700;
   cursor: pointer;
 }
 
 .accept-btn {
-  background: var(--red);
+  background: linear-gradient(135deg, #22c55e, #16a34a);
   color: white;
 }
 
 .accept-btn:hover {
-  background: var(--red-bright);
+  filter: brightness(1.08);
 }
 
 .decline-btn {
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border);
   color: var(--text-dim);
 }
 
 .decline-btn:hover {
-  color: var(--text);
+  color: var(--red);
+  border-color: var(--red);
 }
 
 /* --- Friends list --- */
@@ -313,9 +351,10 @@ body {
 
 .friends-list li {
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
   font-size: 14px;
+  font-weight: 600;
 }
 
 .friends-list li:hover {
@@ -323,9 +362,9 @@ body {
 }
 
 .friends-list li.active {
-  background: rgba(220, 38, 38, 0.18);
-  color: var(--red-bright);
-  font-weight: 600;
+  background: var(--gradient);
+  color: white;
+  font-weight: 700;
 }
 
 /* --- Chat --- */
@@ -333,7 +372,7 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  background: linear-gradient(160deg, #fff7ed 0%, #f6f3ff 50%, #f3eefc 100%);
 }
 
 .chat-window {
@@ -345,8 +384,9 @@ body {
 .chat-header {
   padding: 16px 20px;
   border-bottom: 1px solid var(--border);
-  font-weight: 700;
+  font-weight: 800;
   background: var(--panel);
+  color: var(--purple);
 }
 
 .chat-messages {
@@ -361,21 +401,22 @@ body {
 .bubble {
   max-width: 60%;
   padding: 10px 14px;
-  border-radius: 16px;
+  border-radius: 18px;
   font-size: 14px;
   line-height: 1.4;
 }
 
 .bubble.mine {
   align-self: flex-end;
-  background: var(--red);
+  background: var(--gradient);
   color: white;
   border-bottom-right-radius: 4px;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
 }
 
 .bubble.theirs {
   align-self: flex-start;
-  background: var(--panel-alt);
+  background: var(--panel);
   border: 1px solid var(--border);
   color: var(--text);
   border-bottom-left-radius: 4px;
@@ -392,23 +433,29 @@ body {
 .chat-input input {
   flex: 1;
   padding: 10px 14px;
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border);
   border-radius: 20px;
   font-size: 14px;
   background: var(--panel-alt);
   color: var(--text);
 }
 
+.chat-input input:focus {
+  outline: none;
+  border-color: var(--purple);
+}
+
 .chat-input button {
-  padding: 10px 20px;
+  padding: 10px 22px;
   border: none;
   border-radius: 20px;
-  background: var(--red);
+  background: var(--gradient);
   color: white;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
 }
 
 .chat-input button:hover {
-  background: var(--red-bright);
+  filter: brightness(1.08);
 }
