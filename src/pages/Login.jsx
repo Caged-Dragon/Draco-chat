@@ -9,7 +9,7 @@ const MODES = {
   FORGOT_SENT: 'forgot_sent',
 };
 
-export default function Login() {
+export default function Login({ onBackToLanding }) {
   const { signIn, signUp, signInWithProvider, resendConfirmation, sendPasswordReset } = useAuth();
   const [mode, setMode] = useState(MODES.LOGIN);
   const [email, setEmail] = useState('');
@@ -141,6 +141,11 @@ export default function Login() {
 
   return (
     <div className="center-screen">
+      {onBackToLanding && (
+        <span className="back-to-landing" onClick={onBackToLanding}>
+          ← Home
+        </span>
+      )}
       <form className="auth-card" onSubmit={handleSubmit}>
         <img src="/logo.png" alt="Dragon Chat" className="auth-logo" />
         <h1>{isForgot ? 'Reset password' : isSignup ? 'Sign up' : 'Log in'}</h1>
