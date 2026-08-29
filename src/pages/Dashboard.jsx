@@ -59,7 +59,7 @@ export default function Dashboard() {
         )}
       </main>
 
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      {showSettings && <SettingModal onClose={() => setShowSettings(false)} />}
     </div>
   );
 }
