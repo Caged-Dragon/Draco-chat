@@ -4,6 +4,7 @@ import FriendRequests from '../components/FriendRequests.jsx';
 import FriendsList from '../components/FriendsList.jsx';
 import SearchFriends from '../components/SearchFriends.jsx';
 import ChatWindow from '../components/ChatWindow.jsx';
+import SettingsModal from '../components/SettingsModal.jsx';
 
 export default function Dashboard() {
   const { profile, signOut } = useAuth();
@@ -11,6 +12,7 @@ export default function Dashboard() {
   // Bump this to force FriendsList / FriendRequests to refetch
   const [refreshKey, setRefreshKey] = useState(0);
   const bump = () => setRefreshKey((k) => k + 1);
+  const [showSettings, setShowSettings] = useState(false);
 
   // On mobile, "chat-open" swaps from the friends list to the full-screen
   // chat window. On desktop this class has no visual effect (see CSS).
@@ -24,9 +26,18 @@ export default function Dashboard() {
             <img src="/logo.png" alt="Dragon Chat" className="brand-logo" />
             <span className="brand-name">Dragon Chat</span>
           </div>
-          <button className="logout-btn" onClick={signOut}>
-            Log out
-          </button>
+          <div className="sidebar-header-actions">
+            <button
+              className="settings-btn"
+              onClick={() => setShowSettings(true)}
+              aria-label="App settings"
+            >
+              ⚙️
+            </button>
+            <button className="logout-btn" onClick={signOut}>
+              Log out
+            </button>
+          </div>
         </div>
 
         <div className="me-row">Logged in as {profile?.username ?? 'you'}</div>
@@ -47,6 +58,8 @@ export default function Dashboard() {
           <div className="center-screen dim">Select a friend to start chatting</div>
         )}
       </main>
+
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
     </div>
   );
 }
