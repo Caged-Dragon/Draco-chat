@@ -4,9 +4,9 @@ import { supabase } from '../supabaseClient';
 
 import { useAuth } from '../contexts/AuthContext.jsx';
 
-import ChatThemeModal from './ChatThemeModal.jsx';
-
 import { computeGradient } from '../theme/fields.js';
+
+import ChatThemeModal from './ChatThemeModel.jsx';
 
 // Normalize a UUID for comparison — lowercase and trimmed. Guards
 // against subtle id-format mismatches across devices/browsers.
