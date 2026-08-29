@@ -4,7 +4,7 @@ import FriendRequests from '../components/FriendRequests.jsx';
 import FriendsList from '../components/FriendsList.jsx';
 import SearchFriends from '../components/SearchFriends.jsx';
 import ChatWindow from '../components/ChatWindow.jsx';
-import SettingModal from '../src/components/SettingModel.jsx';
+import SettingModel from '../src/components/SettingModel.jsx';
 
 export default function Dashboard() {
   const { profile, signOut } = useAuth();
@@ -59,7 +59,7 @@ export default function Dashboard() {
         )}
       </main>
 
-      {showSettings && <SettingModal onClose={() => setShowSettings(false)} />}
+      {showSettings && <SettingModel onClose={() => setShowSettings(false)} />}
     </div>
   );
 }
