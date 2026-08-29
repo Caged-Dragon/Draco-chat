@@ -1,15 +1,22 @@
 import { useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext.jsx';
-import { COLOR_FIELDS } from '../theme/fields.js';
+import { useTheme } from '../contexts/ThemeContext.jsx';
+import { FIELD_GROUPS, DEFAULT_THEME } from '../theme/fields.js';
+import ThemePreview from './ThemePreview.jsx';
 
 // theme/wallpaperUrl here are only the OVERRIDES for this one chat —
 // an empty/unset field means "use the global theme's color instead".
 export default function ChatThemeModal({ friend, theme, wallpaperUrl, onChange, onClose }) {
     const { user } = useAuth();
+    const { theme: globalTheme } = useTheme();
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
     const fileInputRef = useRef(null);
+
+    // What the preview should actually show: this chat's override if
+    // set, else the global theme's color, else the hard default.
+    const resolved = { ...DEFAULT_THEME, ...globalTheme, ...theme };
 
     async function saveTheme(nextTheme, nextWallpaperUrl) {
         const { error } = await supabase.from('chat_settings').upsert(
@@ -81,52 +88,73 @@ export default function ChatThemeModal({ friend, theme, wallpaperUrl, onChange, 
                     color untouched to keep using your global theme.
                 </p>
 
-                <div className="color-grid">
-                    {COLOR_FIELDS.map((f) => (
-                        <label className="color-field" key={f.key}>
-                            <span>{f.label}</span>
-                            <div className="color-field-controls">
-                                <input
-                                    type="color"
-                                    value={theme[f.key] || f.default}
-                                    onChange={(e) => handleColorChange(f.key, e.target.value)}
-                                />
-                                {theme[f.key] && (
-                                    <button
-                                        type="button"
-                                        className="clear-color-btn"
-                                        onClick={() => handleClearColor(f.key)}
-                                        aria-label={`Reset ${f.label} to global`}
-                                    >
-                                        ↺
-                                    </button>
+                <div className="theme-groups">
+                    {FIELD_GROUPS.map((group) => (
+                        <div className="theme-group" key={group.id}>
+                            <h3 className="theme-group-title">{group.title}</h3>
+                            <div className="theme-group-body">
+                                <ThemePreview type={group.preview} values={resolved} />
+                                <div className="field-list">
+                                    {group.fields.map((f) => (
+                                        <label className="field-row" key={f.key}>
+                                            <span>{f.label}</span>
+                                            <div className="field-row-controls">
+                                                <input
+                                                    type="color"
+                                                    value={resolved[f.key]}
+                                                    onChange={(e) => handleColorChange(f.key, e.target.value)}
+                                                />
+                                                {theme[f.key] && (
+                                                    <button
+                                                        type="button"
+                                                        className="clear-color-btn"
+                                                        onClick={() => handleClearColor(f.key)}
+                                                        aria-label={`Reset ${f.label} to global`}
+                                                        title="Reset to global theme"
+                                                    >
+                                                        ↺
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+
+                    <div className="theme-group">
+                        <h3 className="theme-group-title">Wallpaper for this chat</h3>
+                        <div className="theme-group-body">
+                            <div className="preview-frame">
+                                {wallpaperUrl ? (
+                                    <img src={wallpaperUrl} alt="Wallpaper preview" className="wallpaper-preview" />
+                                ) : (
+                                    <span className="preview-tag">Using global</span>
                                 )}
                             </div>
-                        </label>
-                    ))}
-                </div>
-
-                <div className="wallpaper-row">
-                    <span>Wallpaper for this chat</span>
-                    <div className="wallpaper-actions">
-                        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={busy}>
-                            {busy ? 'Uploading...' : wallpaperUrl ? 'Change image' : 'Upload image'}
-                        </button>
-                        {wallpaperUrl && (
-                            <button type="button" className="ghost-btn" onClick={() => saveTheme(theme, null)}>
-                                Remove
-                            </button>
-                        )}
+                            <div className="field-list">
+                                <div className="wallpaper-actions">
+                                    <button type="button" onClick={() => fileInputRef.current?.click()} disabled={busy}>
+                                        {busy ? 'Uploading...' : wallpaperUrl ? 'Change image' : 'Upload image'}
+                                    </button>
+                                    {wallpaperUrl && (
+                                        <button type="button" className="ghost-btn" onClick={() => saveTheme(theme, null)}>
+                                            Remove
+                                        </button>
+                                    )}
+                                </div>
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleWallpaperPick}
+                                    hidden
+                                />
+                            </div>
+                        </div>
                     </div>
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handleWallpaperPick}
-                        hidden
-                    />
                 </div>
-                {wallpaperUrl && <img src={wallpaperUrl} alt="Wallpaper preview" className="wallpaper-preview" />}
 
                 {error && <p className="error-text">{error}</p>}
 

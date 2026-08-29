@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { useTheme } from '../contexts/ThemeContext.jsx';
-import { COLOR_FIELDS } from '../theme/fields.js';
+import { FIELD_GROUPS } from '../theme/fields.js';
+import ThemePreview from './ThemePreview.jsx';
 
 export default function SettingsModal({ onClose }) {
     const { theme, wallpaperUrl, updateTheme, uploadWallpaper, clearWallpaper, resetTheme } =
@@ -43,40 +44,60 @@ export default function SettingsModal({ onClose }) {
                     any individual chat's look from that chat's own settings.
                 </p>
 
-                <div className="color-grid">
-                    {COLOR_FIELDS.map((f) => (
-                        <label className="color-field" key={f.key}>
-                            <span>{f.label}</span>
-                            <input
-                                type="color"
-                                value={theme[f.key] || f.default}
-                                onChange={(e) => handleColorChange(f.key, e.target.value)}
-                            />
-                        </label>
+                <div className="theme-groups">
+                    {FIELD_GROUPS.map((group) => (
+                        <div className="theme-group" key={group.id}>
+                            <h3 className="theme-group-title">{group.title}</h3>
+                            <div className="theme-group-body">
+                                <ThemePreview type={group.preview} values={theme} />
+                                <div className="field-list">
+                                    {group.fields.map((f) => (
+                                        <label className="field-row" key={f.key}>
+                                            <span>{f.label}</span>
+                                            <input
+                                                type="color"
+                                                value={theme[f.key] || f.default}
+                                                onChange={(e) => handleColorChange(f.key, e.target.value)}
+                                            />
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
                     ))}
-                </div>
 
-                <div className="wallpaper-row">
-                    <span>Chat wallpaper image</span>
-                    <div className="wallpaper-actions">
-                        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={busy}>
-                            {busy ? 'Uploading...' : wallpaperUrl ? 'Change image' : 'Upload image'}
-                        </button>
-                        {wallpaperUrl && (
-                            <button type="button" className="ghost-btn" onClick={clearWallpaper}>
-                                Remove
-                            </button>
-                        )}
+                    <div className="theme-group">
+                        <h3 className="theme-group-title">Chat wallpaper image</h3>
+                        <div className="theme-group-body">
+                            <div className="preview-frame">
+                                {wallpaperUrl ? (
+                                    <img src={wallpaperUrl} alt="Wallpaper preview" className="wallpaper-preview" />
+                                ) : (
+                                    <span className="preview-tag">No wallpaper</span>
+                                )}
+                            </div>
+                            <div className="field-list">
+                                <div className="wallpaper-actions">
+                                    <button type="button" onClick={() => fileInputRef.current?.click()} disabled={busy}>
+                                        {busy ? 'Uploading...' : wallpaperUrl ? 'Change image' : 'Upload image'}
+                                    </button>
+                                    {wallpaperUrl && (
+                                        <button type="button" className="ghost-btn" onClick={clearWallpaper}>
+                                            Remove
+                                        </button>
+                                    )}
+                                </div>
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleWallpaperPick}
+                                    hidden
+                                />
+                            </div>
+                        </div>
                     </div>
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handleWallpaperPick}
-                        hidden
-                    />
                 </div>
-                {wallpaperUrl && <img src={wallpaperUrl} alt="Wallpaper preview" className="wallpaper-preview" />}
 
                 {error && <p className="error-text">{error}</p>}
 
