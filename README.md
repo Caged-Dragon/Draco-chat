@@ -180,6 +180,60 @@ After deploying, add your live `.vercel.app` URL to Supabase's
   on `ChatWindow`'s root element. `DARK_THEME` in `theme/fields.js` is
   just another theme object, applied the same way as any custom one.
 
+## Bug fixes (this pass)
+
+- **Groups feature was completely broken — Postgres RLS infinite recursion.**
+  `group_members`'s own "select" policy queried `group_members` from
+  inside its own `USING` clause. Postgres detects that as a circular
+  policy dependency and refuses the query with `infinite recursion
+  detected in policy for relation "group_members"` — which broke every
+  read of that table (group lists, group membership, group chat
+  windows), and transitively broke `groups` too since its policy checks
+  membership the same way. Fixed with a `SECURITY DEFINER` helper
+  function (`is_group_member`) that the policies call instead of
+  querying the table directly — this is the standard, Supabase-documented
+  way to break this kind of cycle. **You need to re-run `supabase/schema.sql`
+  in the SQL Editor for this fix to take effect** — it's a database
+  change, not something a code deploy alone fixes.
+- **Blank white screen when `.env` isn't set up.** `supabaseClient.js`
+  used to call `createClient()` with possibly-empty values, which throws
+  synchronously and crashes the whole app before anything renders — with
+  nothing on screen to say why. It now shows a plain-language on-page
+  message telling you to fill in `.env` instead of silently failing.
+- **`package-lock.json` was out of sync with `package.json`** (lockfile
+  said version `1.0.0`/wrong name, `package.json` says `5.0.0`). Some
+  npm versions and CI setups refuse to run `npm ci` when these disagree.
+  Synced.
+- **Removed stale duplicate files** — `ChatThemeModel.jsx`, `SettingModel.jsx`,
+  and `ThemePreview.jsx` were leftovers from an earlier design (they imported
+  `FIELD_GROUPS` from `theme/fields.js`, which no longer exists — only
+  `THEME_TABS` does now). They weren't imported anywhere, so they didn't
+  break the build, but they were dead, broken code. The live components are
+  `ChatThemeModal.jsx` and `SettingsModal.jsx`.
+- **Fixed a realtime channel leak in `ChatWindow.jsx`** — the per-conversation
+  `reactions-*` Supabase channel was created inside `loadReactions()`, which
+  runs on every `loadMessages()` call, but its cleanup function was never
+  captured or called. Switching between conversations repeatedly left old
+  reaction channels open for the rest of the session. The reactions channel
+  is now created once per `friend.id` alongside the main chat channel and
+  torn down together with it.
+- **Fixed a stale-closure bug in the same handler** — the reactions listener
+  checked incoming rows against the `messages` array as it existed at the
+  moment the channel was created, so a reaction added to a message that
+  arrived *later* in the same session (via the realtime `INSERT` handler)
+  was silently dropped. It now checks against a ref that's kept in sync with
+  the current message list on every render.
+- **`signUp()`/`resendConfirmation()` didn't pass `emailRedirectTo`**, unlike
+  `signInWithProvider`/`sendPasswordReset` which both set it explicitly —
+  now consistent, so confirmation links always point back at the running
+  app instead of relying on the dashboard's default Site URL.
+
+**Not a code bug, but worth knowing:** if signup confirmation emails aren't
+arriving at all, it's almost always because Supabase's built-in mailer is
+test-only and throttled to ~3-4 emails/hour per project. Set up a real SMTP
+provider (Resend, SendGrid, SES, Postmark — all have free tiers) under
+**Project Settings → Authentication → SMTP Settings**.
+
 ## Extending it later
 
 - A TURN server (see `.env` above) for more reliable calling

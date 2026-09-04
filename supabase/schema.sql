@@ -458,11 +458,32 @@ alter table public.groups enable row level security;
 alter table public.group_members enable row level security;
 alter table public.group_messages enable row level security;
 
+-- Helper for membership checks used inside RLS policies below. A SELECT
+-- policy on group_members that queries group_members itself (e.g. "am I
+-- a member of this group") causes Postgres to raise "infinite recursion
+-- detected in policy for relation group_members" — evaluating the outer
+-- row requires re-evaluating the same policy for the inner subquery's
+-- rows, forever. Wrapping the lookup in a SECURITY DEFINER function
+-- breaks the cycle: the function runs as its owner (bypassing RLS on
+-- its own internal query) instead of re-triggering the calling policy.
+create or replace function public.is_group_member(p_group_id uuid, p_user_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from public.group_members
+    where group_id = p_group_id and user_id = p_user_id
+  );
+$$;
+
 drop policy if exists "Members can view their groups" on public.groups;
 create policy "Members can view their groups"
 on public.groups for select
 to authenticated
-using (exists (select 1 from public.group_members gm where gm.group_id = id and gm.user_id = auth.uid()));
+using (public.is_group_member(id, auth.uid()));
 
 drop policy if exists "Users can create groups" on public.groups;
 create policy "Users can create groups"
@@ -476,11 +497,17 @@ on public.groups for update
 to authenticated
 using (auth.uid() = created_by);
 
+-- BUG FIX: this policy used to query group_members from within its own
+-- USING clause ("select 1 from group_members gm2 where ..."), which is
+-- exactly the self-referencing pattern above and broke every query
+-- against group_members (and, transitively, the "groups" policy that
+-- depends on it) with "infinite recursion detected in policy for
+-- relation group_members" — this took down the entire Groups feature.
 drop policy if exists "Members can view membership" on public.group_members;
 create policy "Members can view membership"
 on public.group_members for select
 to authenticated
-using (exists (select 1 from public.group_members gm2 where gm2.group_id = group_id and gm2.user_id = auth.uid()));
+using (public.is_group_member(group_id, auth.uid()));
 
 drop policy if exists "Creator can add members or user can join self" on public.group_members;
 create policy "Creator can add members or user can join self"
