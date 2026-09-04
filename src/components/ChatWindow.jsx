@@ -52,6 +52,15 @@ export default function ChatWindow({ friend, onBack }) {
   const friendTypingTimeoutRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
+  // Always-current set of message ids in this conversation, so the
+  // reactions realtime handler (set up once per friend.id) never reads
+  // a stale closure of `messages` when deciding whether a reaction
+  // belongs on screen.
+  const messageIdsRef = useRef(new Set());
+
+  useEffect(() => {
+    messageIdsRef.current = new Set(messages.map((m) => m.id));
+  }, [messages]);
 
   useEffect(() => {
     loadMessages();
@@ -99,8 +108,30 @@ export default function ChatWindow({ friend, onBack }) {
 
     chatChannelRef.current = channel;
 
+    // Live reaction updates for this conversation. Set up once per
+    // friend.id (not per loadMessages() call) and cleaned up alongside
+    // the chat channel below, so switching conversations never leaks a
+    // lingering `reactions-*` realtime channel.
+    const reactionsChannel = supabase
+      .channel(`reactions-${[user.id, friend.id].sort().join('-')}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, (payload) => {
+        const row = payload.new || payload.old;
+        if (!messageIdsRef.current.has(row.message_id)) return;
+        setReactionsByMessage((prev) => {
+          const next = { ...prev };
+          const list = (next[row.message_id] || []).filter(
+            (r) => !(r.user_id === row.user_id && r.emoji === row.emoji)
+          );
+          if (payload.eventType !== 'DELETE') list.push(row);
+          next[row.message_id] = list;
+          return next;
+        });
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(reactionsChannel);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       if (friendTypingTimeoutRef.current) clearTimeout(friendTypingTimeoutRef.current);
     };
@@ -140,27 +171,6 @@ export default function ChatWindow({ friend, onBack }) {
       grouped[r.message_id].push(r);
     });
     setReactionsByMessage(grouped);
-
-    // Live reaction updates for this conversation's messages
-    const idSet = new Set(messageIds);
-    const channel = supabase
-      .channel(`reactions-${[user.id, friend.id].sort().join('-')}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, (payload) => {
-        const row = payload.new || payload.old;
-        if (!idSet.has(row.message_id) && !messages.find((m) => m.id === row.message_id)) return;
-        setReactionsByMessage((prev) => {
-          const next = { ...prev };
-          const list = (next[row.message_id] || []).filter(
-            (r) => !(r.user_id === row.user_id && r.emoji === row.emoji)
-          );
-          if (payload.eventType !== 'DELETE') list.push(row);
-          next[row.message_id] = list;
-          return next;
-        });
-      })
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
   }
 
   async function loadChatSettings() {
