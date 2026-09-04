@@ -15,12 +15,14 @@ create table if not exists public.profiles (
 alter table public.profiles enable row level security;
 
 -- Anyone logged in can search/view basic profile info
+drop policy if exists "Profiles are viewable by authenticated users" on public.profiles;
 create policy "Profiles are viewable by authenticated users"
 on public.profiles for select
 to authenticated
 using (true);
 
 -- Users can only edit their own profile
+drop policy if exists "Users can update own profile" on public.profiles;
 create policy "Users can update own profile"
 on public.profiles for update
 to authenticated
@@ -87,18 +89,21 @@ create table if not exists public.friendships (
 alter table public.friendships enable row level security;
 
 -- Either side of the friendship (or request) can see the row
+drop policy if exists "Users can view their own friendships" on public.friendships;
 create policy "Users can view their own friendships"
 on public.friendships for select
 to authenticated
 using (auth.uid() = requester_id or auth.uid() = addressee_id);
 
 -- Only the requester can create a new request
+drop policy if exists "Users can send friend requests" on public.friendships;
 create policy "Users can send friend requests"
 on public.friendships for insert
 to authenticated
 with check (auth.uid() = requester_id);
 
 -- Only the addressee can accept (update status) a pending request
+drop policy if exists "Addressee can accept a friend request" on public.friendships;
 create policy "Addressee can accept a friend request"
 on public.friendships for update
 to authenticated
@@ -106,6 +111,7 @@ using (auth.uid() = addressee_id)
 with check (auth.uid() = addressee_id);
 
 -- Either side can delete: addressee declines, requester cancels/unfriends
+drop policy if exists "Either side can remove a friendship or request" on public.friendships;
 create policy "Either side can remove a friendship or request"
 on public.friendships for delete
 to authenticated
@@ -138,11 +144,13 @@ alter table public.messages add constraint messages_content_or_attachment
 
 alter table public.messages enable row level security;
 
+drop policy if exists "Users can view their own conversations" on public.messages;
 create policy "Users can view their own conversations"
 on public.messages for select
 to authenticated
 using (auth.uid() = sender_id or auth.uid() = receiver_id);
 
+drop policy if exists "Users can send messages" on public.messages;
 create policy "Users can send messages"
 on public.messages for insert
 to authenticated
@@ -154,7 +162,11 @@ create index if not exists messages_conversation_idx
 
 -- 4) REALTIME ------------------------------------------------------
 -- Enable realtime broadcasts for the messages table
-alter publication supabase_realtime add table public.messages;
+do $$
+begin
+  alter publication supabase_realtime add table public.messages;
+exception when duplicate_object then null;
+end $$;
 
 
 -- 5) THEME SETTINGS (v3) --------------------------------------------
@@ -168,6 +180,7 @@ create table if not exists public.user_settings (
 
 alter table public.user_settings enable row level security;
 
+drop policy if exists "Users manage their own global settings" on public.user_settings;
 create policy "Users manage their own global settings"
 on public.user_settings for all
 to authenticated
@@ -189,6 +202,7 @@ create table if not exists public.chat_settings (
 
 alter table public.chat_settings enable row level security;
 
+drop policy if exists "Users manage their own chat settings" on public.chat_settings;
 create policy "Users manage their own chat settings"
 on public.chat_settings for all
 to authenticated
@@ -315,7 +329,11 @@ on public.message_reactions for delete
 to authenticated
 using (auth.uid() = user_id);
 
-alter publication supabase_realtime add table public.message_reactions;
+do $$
+begin
+  alter publication supabase_realtime add table public.message_reactions;
+exception when duplicate_object then null;
+end $$;
 
 
 -- ============================================================
@@ -551,8 +569,16 @@ on public.group_messages for delete
 to authenticated
 using (auth.uid() = sender_id);
 
-alter publication supabase_realtime add table public.group_messages;
-alter publication supabase_realtime add table public.group_members;
+do $$
+begin
+  alter publication supabase_realtime add table public.group_messages;
+exception when duplicate_object then null;
+end $$;
+do $$
+begin
+  alter publication supabase_realtime add table public.group_members;
+exception when duplicate_object then null;
+end $$;
 
 
 -- ============================================================

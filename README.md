@@ -182,6 +182,20 @@ After deploying, add your live `.vercel.app` URL to Supabase's
 
 ## Bug fixes (this pass)
 
+- **`schema.sql` wasn't actually re-runnable, despite the README saying it was.**
+  Re-running it on a database where it had already run once failed immediately
+  with `policy "Profiles are viewable by authenticated users" for table
+  "profiles" already exists` (Postgres error 42710). Ten `create policy`
+  statements (on `profiles`, `friendships`, the original `messages` policies,
+  and `user_settings`/`chat_settings`) were missing the `drop policy if
+  exists ...;` guard that every other policy in the file already uses. The
+  four `alter publication supabase_realtime add table ...` statements had
+  the same problem — re-running them errors with "relation is already member
+  of publication." Every policy now has its guard, and the publication
+  statements are wrapped in `do $$ ... exception when duplicate_object then
+  null; end $$;` blocks. **The whole file is genuinely safe to re-run now** —
+  this was specifically blocking the group-membership RLS fix below from
+  being applied to an existing database.
 - **Groups feature was completely broken — Postgres RLS infinite recursion.**
   `group_members`'s own "select" policy queried `group_members` from
   inside its own `USING` clause. Postgres detects that as a circular
