@@ -29,7 +29,19 @@ export function AuthProvider({ children }) {
   }, []);
 
   async function loadProfile(userId) {
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
+    // maybeSingle(), not single() — a missing profile row (e.g. an
+    // account created before the profile-creation trigger existed)
+    // should degrade gracefully instead of throwing a 406 error that
+    // breaks every feature that reads `profile`.
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Failed to load profile:', error);
+    }
     setProfile(data);
     return data;
   }
@@ -57,7 +69,7 @@ export function AuthProvider({ children }) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { username }, emailRedirectTo: window.location.origin },
+      options: { data: { username } },
     });
     return { data, error };
   }
@@ -77,11 +89,7 @@ export function AuthProvider({ children }) {
   }
 
   async function resendConfirmation(email) {
-    const { data, error } = await supabase.auth.resend({
-      type: 'signup',
-      email,
-      options: { emailRedirectTo: window.location.origin },
-    });
+    const { data, error } = await supabase.auth.resend({ type: 'signup', email });
     return { data, error };
   }
 
