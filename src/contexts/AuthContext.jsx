@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '../supabaseClient';
+import { createContext, useContext, useEffect, useState } from "react";
+import { supabase } from "../supabaseClient";
 
 const AuthContext = createContext(null);
 
@@ -18,18 +18,24 @@ export function AuthProvider({ children }) {
     });
 
     // Keep session in sync (login, logout, token refresh, password recovery)
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      setSession(session);
-      if (event === 'PASSWORD_RECOVERY') {
-        setRecoveryMode(true);
-      }
-    });
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session);
+        if (event === "PASSWORD_RECOVERY") {
+          setRecoveryMode(true);
+        }
+      },
+    );
 
     return () => listener.subscription.unsubscribe();
   }, []);
 
   async function loadProfile(userId) {
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", userId)
+      .single();
     setProfile(data);
     return data;
   }
@@ -57,13 +63,16 @@ export function AuthProvider({ children }) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { username } },
+      options: { data: { username }, emailRedirectTo: window.location.origin },
     });
     return { data, error };
   }
 
   async function signIn(email, password) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
     return { data, error };
   }
 
@@ -77,7 +86,11 @@ export function AuthProvider({ children }) {
   }
 
   async function resendConfirmation(email) {
-    const { data, error } = await supabase.auth.resend({ type: 'signup', email });
+    const { data, error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: window.location.origin },
+    });
     return { data, error };
   }
 
@@ -89,7 +102,9 @@ export function AuthProvider({ children }) {
   }
 
   async function updatePassword(newPassword) {
-    const { data, error } = await supabase.auth.updateUser({ password: newPassword });
+    const { data, error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
     if (!error) setRecoveryMode(false);
     return { data, error };
   }
