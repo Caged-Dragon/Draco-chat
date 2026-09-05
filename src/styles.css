@@ -6,6 +6,63 @@
   .modal-overlay {
     padding: 10px;
     align-items: flex-end;
+
+    /* Chat header now packs an avatar + name + 4 icon buttons — give
+        everything less room so it fits on a phone screen instead of
+        overflowing or wrapping badly. */
+    .chat-header {
+      padding: 10px 12px;
+      gap: 6px;
+    }
+
+    .chat-settings-btn {
+      font-size: 15px;
+      padding: 4px 3px;
+    }
+
+    .back-btn {
+      font-size: 18px;
+    }
+
+    .chat-header-name {
+      font-size: 14px;
+    }
+
+    .sidebar-header-actions {
+      gap: 4px;
+    }
+
+    .sidebar-header-actions .settings-btn,
+    .sidebar-header-actions .logout-btn {
+      padding: 5px 8px;
+      font-size: 11px;
+    }
+
+    .message-image {
+      max-width: 65vw;
+      max-height: 220px;
+    }
+
+    .emoji-picker {
+      left: 8px;
+      right: 8px;
+      bottom: 62px;
+      grid-template-columns: repeat(6, 1fr);
+    }
+
+    .bubble-hover-actions,
+    .reaction-picker {
+      transform: scale(0.95);
+    }
+
+    .reply-preview,
+    .chat-search-bar {
+      padding: 8px 12px;
+    }
+
+    .reply-preview-text {
+      max-width: 180px;
+    }
   }
 
   .modal-card {
@@ -550,6 +607,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
+  position: relative;
   background-color: var(--chat-bg-color);
   background-image: var(--wallpaper-image);
   background-size: cover;
@@ -570,6 +628,14 @@ body {
 
 .chat-header-name {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.chat-header-name>div:first-child {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chat-settings-btn {
@@ -2018,6 +2084,9 @@ body {
   font-weight: 500;
   color: rgba(255, 255, 255, 0.75);
   opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chat-search-bar {
