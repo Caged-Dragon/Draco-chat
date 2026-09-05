@@ -761,7 +761,7 @@ body {
   border-color: var(--purple);
 }
 
-.chat-input button {
+.chat-input button[type="submit"] {
   padding: 10px 22px;
   border: none;
   border-radius: 20px;
@@ -772,7 +772,7 @@ body {
   box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
 }
 
-.chat-input button:hover {
+.chat-input button[type="submit"]:hover {
   filter: brightness(1.08);
 }
 
