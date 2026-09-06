@@ -2391,3 +2391,79 @@ body {
   color: var(--purple);
   letter-spacing: 0.03em;
 }
+
+.chat-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.chat-window {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+  overflow-x: hidden;
+  background-color: var(--chat-bg-color);
+  background-image: var(--wallpaper-image);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.app-shell {
+  display: flex;
+  height: 100vh;
+  overflow-x: hidden;
+}
+
+.chat-header {
+  padding: clamp(10px, 2.5vw, 16px) clamp(12px, 4vw, 20px);
+  border-bottom: 1px solid var(--border);
+  font-weight: 800;
+  background: var(--panel);
+  color: var(--purple);
+  display: flex;
+  align-items: center;
+  gap: clamp(6px, 1.5vw, 10px);
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.chat-settings-btn {
+  border: none;
+  background: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.back-btn {
+  display: none;
+  border: none;
+  background: none;
+  color: var(--purple);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.chat-input button[type="submit"] {
+  padding: 10px 22px;
+  border: none;
+  border-radius: 20px;
+  background: var(--gradient);
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}

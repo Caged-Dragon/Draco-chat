@@ -1,28 +1,49 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext.jsx';
+
+const DEBOUNCE_MS = 300;
 
 export default function SearchFriends({ onRequestSent }) {
   const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [message, setMessage] = useState('');
+  const [searching, setSearching] = useState(false);
+  const debounceRef = useRef(null);
+  const requestIdRef = useRef(0);
 
-  async function handleSearch(e) {
-    e.preventDefault();
-    setMessage('');
-    if (!query.trim()) {
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    const trimmed = query.trim();
+    if (!trimmed) {
       setResults([]);
+      setSearching(false);
       return;
     }
 
+    setSearching(true);
+    debounceRef.current = setTimeout(() => runSearch(trimmed), DEBOUNCE_MS);
+
+    return () => clearTimeout(debounceRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  async function runSearch(term) {
+    // Guards against an older, slower request overwriting a newer one
+    const thisRequestId = ++requestIdRef.current;
+
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, username')
-      .ilike('username', `%${query.trim()}%`)
+      .select('id, username, avatar_url')
+      .ilike('username', `%${term}%`)
       .neq('id', user.id)
       .limit(10);
 
+    if (thisRequestId !== requestIdRef.current) return; // a newer keystroke already fired
+
+    setSearching(false);
     if (error) {
       setMessage(error.message);
       return;
@@ -46,23 +67,26 @@ export default function SearchFriends({ onRequestSent }) {
     }
 
     setMessage('Friend request sent!');
+    setResults((prev) => prev.filter((r) => r.id !== addresseeId));
     onRequestSent?.();
   }
 
   return (
     <div className="search-friends">
-      <form onSubmit={handleSearch}>
-        <input
-          type="text"
-          placeholder="Search by username"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      </form>
+      <input
+        type="text"
+        placeholder="Search by username"
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setMessage('');
+        }}
+      />
 
+      {searching && <p className="dim small">Searching...</p>}
       {message && <p className="info-text small">{message}</p>}
 
-      {results.length > 0 && (
+      {!searching && results.length > 0 && (
         <ul className="search-results">
           {results.map((r) => (
             <li key={r.id}>
@@ -71,6 +95,10 @@ export default function SearchFriends({ onRequestSent }) {
             </li>
           ))}
         </ul>
+      )}
+
+      {!searching && query.trim() && results.length === 0 && !message && (
+        <p className="dim small">No matching users.</p>
       )}
     </div>
   );
