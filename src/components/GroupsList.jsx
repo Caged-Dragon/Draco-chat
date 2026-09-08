@@ -9,7 +9,31 @@ export default function GroupsList({ activeGroupId, onSelectGroup, refreshKey })
   const [showCreate, setShowCreate] = useState(false);
 
   useEffect(() => {
+    if (!user) return;
     loadGroups();
+
+    // Live updates: someone adding you to a new group should show up
+    // immediately, not just after a reload.
+    const channel = supabase
+      .channel(`group-members-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'group_members' },
+        (payload) => {
+          const row = payload.new?.user_id ? payload.new : payload.old;
+          if (row?.user_id === user.id) loadGroups();
+        }
+      )
+      .subscribe();
+
+    // Safety-net poll: guarantees being added to a group shows up
+    // within ~15s even if realtime replication isn't enabled.
+    const poll = setInterval(loadGroups, 15000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(poll);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, refreshKey]);
 

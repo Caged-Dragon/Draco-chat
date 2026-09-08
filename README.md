@@ -1,12 +1,126 @@
-# 🐉 Dragon Chat (v5)
+# 🐉 Dragon Chat (v5.4)
 
 *Connect Different. Chat Real.*
 
 A full-featured chat web app: 1:1 and group messaging, voice/video calling
-(1:1 and group), presence, reactions, per-user theming, and more. Built by
-**Caged Dragon Studios**.
+(1:1 and group), presence, reactions, per-user theming, status/stories,
+and more. Built by **Caged Dragon Studios**.
 
 **Stack:** React + Vite (frontend) · Supabase (auth, database, realtime, storage) · GitHub + Vercel (hosting)
+
+---
+
+## v5.4 — Status / Stories
+
+New feature, like WhatsApp Status or Instagram Stories:
+
+- A horizontal row of circular avatars at the top of the sidebar —
+  "Your status" first, then any friends with an active story. A
+  gradient ring means there's something new to see; a muted ring means
+  you've already viewed everything that person posted.
+- **Post a text status** (short message on a colored background, pick
+  from 8 preset colors) or an **image status** (with an optional
+  caption).
+- Tap a circle to open a **full-screen viewer** with Instagram-style
+  progress bars across the top, auto-advancing every 5 seconds. Tap
+  the left/right edge of the screen to go back/forward; press and hold
+  anywhere to pause.
+- **Statuses expire after 24 hours** automatically (enforced at the
+  database level — a status simply stops being visible to others past
+  its `expires_at`, no cleanup job required).
+- On your own statuses, tap "Viewed by" at the bottom to see exactly
+  who's seen it and when, and a 🗑 button to delete a status early.
+
+**New tables:** `statuses`, `status_views`. **New storage bucket:**
+`status-media`. All covered by the usual full `supabase/schema.sql` —
+re-run it (idempotent) to pick this up. No existing tables changed.
+
+### Known limits
+- Expired statuses aren't actively deleted from the database, just
+  hidden by Row Level Security — fine at small scale, but a scheduled
+  cleanup (e.g. a `pg_cron` job) would be a sensible addition if this
+  grows.
+- No "close friends" / custom audience list yet — a status is visible
+  to *all* of your accepted friends, same as everyone else's.
+
+---
+
+## v5.3.1 patch notes
+
+Mobile overflow issues (chat header, input row, Send button hidden)
+kept resurfacing across incremental CSS patches — most likely because
+manually pasted snippets left old/conflicting rules in place, and CSS
+silently lets the *last* matching rule win regardless of which one is
+"correct." Rather than patch the stylesheet again, chat headers and
+input rows (`ChatWindow.jsx`, `GroupChatWindow.jsx`, `Dashboard.jsx`)
+now compute their sizing in JavaScript from the real, live
+`window.innerWidth` (via a new `useViewportWidth` hook) and apply it
+as inline styles. Inline styles always win over any stylesheet rule,
+so this is immune to the exact class of bug that kept recurring — it
+no longer matters what state `styles.css` is in for these elements.
+
+---
+
+## v5.3 patch notes
+
+- **Fixed a real overflow bug**: a CSS rule meant only for the "Send"
+  button (`.chat-input button`) was also styling the emoji/attach/mic
+  icon buttons as giant gradient pills, pushing Send off-screen on
+  phones. The icon buttons and text input also lacked `min-width: 0`,
+  which is what let the row overflow the viewport in the first place.
+  Both are fixed, plus a global `overflow-x: hidden` safety net on
+  `<body>` so this class of bug can't cause page-wide horizontal
+  scrolling again.
+- **Friend search is now live** — results appear as you type (debounced
+  ~300ms), no more pressing Enter or a "Find" button.
+- **Friend requests/acceptances and group invites** now have a 15-second
+  polling fallback in addition to realtime, so they show up without a
+  manual refresh even if realtime replication isn't active on your
+  Supabase project for some reason.
+- **More fluid sizing** — chat header padding, message bubbles, and
+  friend list text now scale smoothly with screen width (`clamp()`)
+  instead of only jumping at fixed breakpoints.
+
+---
+
+## v5.2 patch notes
+
+- **Usernames are now editable** from the Profile modal (previously
+  locked at signup). Renaming checks for uniqueness and shows a clear
+  error ("That username is already taken") if it's in use.
+- **Every account now has a permanent numeric ID** (`user_number`),
+  assigned automatically by the database the moment the account is
+  created, and shown in the Profile modal as a Dragon Chat ID (e.g.
+  `#000123`). It never changes — even if the username is renamed —
+  and a database trigger blocks it from being altered by any client
+  request.
+
+If you're upgrading from v5.1, **re-run the full `supabase/schema.sql`**
+(safe, idempotent) — it backfills a `user_number` for every existing
+account automatically.
+
+---
+
+## v5.1 patch notes
+
+Two bugs fixed after real-world testing of v5:
+
+1. **Group creation could fail** — a circular Row Level Security check
+   meant the group creator couldn't add friends as members right after
+   creating a group (their own membership row would insert fine, but
+   everyone else's would be silently rejected, rolling back the whole
+   insert). Fixed by letting the creator see their own group immediately
+   instead of only after they're already a member.
+2. **Friend requests, acceptances, and being added to a group required a
+   manual page reload to show up** — `friendships` and `groups` were
+   never added to Supabase's realtime publication, and the sidebar
+   components had no live subscription to begin with. Both are fixed:
+   the tables are now realtime-enabled, and `FriendRequests.jsx`,
+   `FriendsList.jsx`, and `GroupsList.jsx` all subscribe to live changes
+   instead of only refreshing on the current user's own actions.
+
+If you're upgrading from v5.0, **re-run the full `supabase/schema.sql`**
+(safe, idempotent) to pick up both fixes.
 
 ---
 
@@ -179,74 +293,6 @@ After deploying, add your live `.vercel.app` URL to Supabase's
   applied globally (`ThemeContext`) or scoped per-chat via inline style
   on `ChatWindow`'s root element. `DARK_THEME` in `theme/fields.js` is
   just another theme object, applied the same way as any custom one.
-
-## Bug fixes (this pass)
-
-- **`schema.sql` wasn't actually re-runnable, despite the README saying it was.**
-  Re-running it on a database where it had already run once failed immediately
-  with `policy "Profiles are viewable by authenticated users" for table
-  "profiles" already exists` (Postgres error 42710). Ten `create policy`
-  statements (on `profiles`, `friendships`, the original `messages` policies,
-  and `user_settings`/`chat_settings`) were missing the `drop policy if
-  exists ...;` guard that every other policy in the file already uses. The
-  four `alter publication supabase_realtime add table ...` statements had
-  the same problem — re-running them errors with "relation is already member
-  of publication." Every policy now has its guard, and the publication
-  statements are wrapped in `do $$ ... exception when duplicate_object then
-  null; end $$;` blocks. **The whole file is genuinely safe to re-run now** —
-  this was specifically blocking the group-membership RLS fix below from
-  being applied to an existing database.
-- **Groups feature was completely broken — Postgres RLS infinite recursion.**
-  `group_members`'s own "select" policy queried `group_members` from
-  inside its own `USING` clause. Postgres detects that as a circular
-  policy dependency and refuses the query with `infinite recursion
-  detected in policy for relation "group_members"` — which broke every
-  read of that table (group lists, group membership, group chat
-  windows), and transitively broke `groups` too since its policy checks
-  membership the same way. Fixed with a `SECURITY DEFINER` helper
-  function (`is_group_member`) that the policies call instead of
-  querying the table directly — this is the standard, Supabase-documented
-  way to break this kind of cycle. **You need to re-run `supabase/schema.sql`
-  in the SQL Editor for this fix to take effect** — it's a database
-  change, not something a code deploy alone fixes.
-- **Blank white screen when `.env` isn't set up.** `supabaseClient.js`
-  used to call `createClient()` with possibly-empty values, which throws
-  synchronously and crashes the whole app before anything renders — with
-  nothing on screen to say why. It now shows a plain-language on-page
-  message telling you to fill in `.env` instead of silently failing.
-- **`package-lock.json` was out of sync with `package.json`** (lockfile
-  said version `1.0.0`/wrong name, `package.json` says `5.0.0`). Some
-  npm versions and CI setups refuse to run `npm ci` when these disagree.
-  Synced.
-- **Removed stale duplicate files** — `ChatThemeModel.jsx`, `SettingModel.jsx`,
-  and `ThemePreview.jsx` were leftovers from an earlier design (they imported
-  `FIELD_GROUPS` from `theme/fields.js`, which no longer exists — only
-  `THEME_TABS` does now). They weren't imported anywhere, so they didn't
-  break the build, but they were dead, broken code. The live components are
-  `ChatThemeModal.jsx` and `SettingsModal.jsx`.
-- **Fixed a realtime channel leak in `ChatWindow.jsx`** — the per-conversation
-  `reactions-*` Supabase channel was created inside `loadReactions()`, which
-  runs on every `loadMessages()` call, but its cleanup function was never
-  captured or called. Switching between conversations repeatedly left old
-  reaction channels open for the rest of the session. The reactions channel
-  is now created once per `friend.id` alongside the main chat channel and
-  torn down together with it.
-- **Fixed a stale-closure bug in the same handler** — the reactions listener
-  checked incoming rows against the `messages` array as it existed at the
-  moment the channel was created, so a reaction added to a message that
-  arrived *later* in the same session (via the realtime `INSERT` handler)
-  was silently dropped. It now checks against a ref that's kept in sync with
-  the current message list on every render.
-- **`signUp()`/`resendConfirmation()` didn't pass `emailRedirectTo`**, unlike
-  `signInWithProvider`/`sendPasswordReset` which both set it explicitly —
-  now consistent, so confirmation links always point back at the running
-  app instead of relying on the dashboard's default Site URL.
-
-**Not a code bug, but worth knowing:** if signup confirmation emails aren't
-arriving at all, it's almost always because Supabase's built-in mailer is
-test-only and throttled to ~3-4 emails/hour per project. Set up a real SMTP
-provider (Resend, SendGrid, SES, Postmark — all have free tiers) under
-**Project Settings → Authentication → SMTP Settings**.
 
 ## Extending it later
 

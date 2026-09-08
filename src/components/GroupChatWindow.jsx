@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import { useGroupCall } from '../contexts/GroupCallContext.jsx';
 import Avatar from './Avatar.jsx';
 import { linkifyParts, formatMessageTime, QUICK_EMOJIS } from '../utils/format.js';
+import { useViewportWidth } from '../hooks/useViewportWidth.js';
 
 const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
 const TYPING_STOP_DELAY = 3000;
@@ -157,14 +158,41 @@ export default function GroupChatWindow({ group, onBack }) {
 
   const typingNames = Object.values(typingUsers);
 
+  // Same guaranteed dynamic sizing as the 1:1 ChatWindow — see there
+  // for why inline styles are used instead of relying purely on CSS.
+  const viewportWidth = useViewportWidth();
+  const isSmall = viewportWidth <= 400;
+  const isMobile = viewportWidth <= 640;
+
+  const headerStyle = isMobile
+    ? { padding: isSmall ? '8px 10px' : '10px 14px', gap: isSmall ? '4px' : '6px' }
+    : undefined;
+  const iconBtnStyle = isMobile
+    ? { fontSize: isSmall ? 13 : 15, padding: '4px 2px', flexShrink: 0 }
+    : undefined;
+  const nameWrapStyle = isMobile
+    ? { minWidth: 0, flex: '1 1 auto', overflow: 'hidden', cursor: 'pointer' }
+    : { cursor: 'pointer' };
+  const nameTextStyle = isMobile
+    ? { fontSize: isSmall ? 13 : 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+    : undefined;
+  const inputRowStyle = isMobile
+    ? { padding: isSmall ? '8px' : '10px 12px', gap: isSmall ? '4px' : '6px' }
+    : undefined;
+  const textInputStyle = { flex: '1 1 auto', minWidth: 0 };
+  const sendBtnStyle = isMobile
+    ? { padding: isSmall ? '8px 12px' : '9px 16px', fontSize: isSmall ? 13 : 14, flexShrink: 0, whiteSpace: 'nowrap' }
+    : { flexShrink: 0 };
+  const attachIconStyle = isMobile ? { fontSize: isSmall ? 16 : 18, flexShrink: 0 } : { flexShrink: 0 };
+
   return (
     <div className="chat-window">
-      <div className="chat-header">
-        <button className="back-btn" onClick={onBack} aria-label="Back">
+      <div className="chat-header" style={headerStyle}>
+        <button className="back-btn" onClick={onBack} aria-label="Back" style={iconBtnStyle}>
           ←
         </button>
-        <div className="chat-header-name" onClick={() => setShowMembers((s) => !s)} style={{ cursor: 'pointer' }}>
-          <div>👥 {group.name}</div>
+        <div className="chat-header-name" onClick={() => setShowMembers((s) => !s)} style={nameWrapStyle}>
+          <div style={nameTextStyle}>👥 {group.name}</div>
           <div className="chat-header-sub">
             {typingNames.length > 0 ? `${typingNames.join(', ')} typing...` : `${members.length} members`}
           </div>
@@ -174,6 +202,7 @@ export default function GroupChatWindow({ group, onBack }) {
           onClick={() => joinCall(group, 'audio')}
           disabled={!!activeCall}
           aria-label="Group voice call"
+          style={iconBtnStyle}
         >
           📞
         </button>
@@ -182,6 +211,7 @@ export default function GroupChatWindow({ group, onBack }) {
           onClick={() => joinCall(group, 'video')}
           disabled={!!activeCall}
           aria-label="Group video call"
+          style={iconBtnStyle}
         >
           🎥
         </button>
@@ -288,8 +318,13 @@ export default function GroupChatWindow({ group, onBack }) {
         </div>
       )}
 
-      <form className="chat-input" onSubmit={sendMessage}>
-        <button type="button" className="attach-btn" onClick={() => setShowEmojiPicker((s) => !s)}>
+      <form className="chat-input" onSubmit={sendMessage} style={inputRowStyle}>
+        <button
+          type="button"
+          className="attach-btn"
+          onClick={() => setShowEmojiPicker((s) => !s)}
+          style={attachIconStyle}
+        >
           😊
         </button>
         <button
@@ -297,6 +332,7 @@ export default function GroupChatWindow({ group, onBack }) {
           className="attach-btn"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
+          style={attachIconStyle}
         >
           {uploading ? '…' : '📎'}
         </button>
@@ -307,8 +343,16 @@ export default function GroupChatWindow({ group, onBack }) {
           onChange={handleAttachmentPick}
           hidden
         />
-        <input type="text" placeholder="Message the group..." value={text} onChange={handleTextChange} />
-        <button type="submit">Send</button>
+        <input
+          type="text"
+          placeholder="Message the group..."
+          value={text}
+          onChange={handleTextChange}
+          style={textInputStyle}
+        />
+        <button type="submit" style={sendBtnStyle}>
+          Send
+        </button>
       </form>
 
       {showEmojiPicker && (

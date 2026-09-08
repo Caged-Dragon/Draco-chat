@@ -17,8 +17,35 @@ export default function FriendsList({ refreshKey, activeFriendId, onSelectFriend
   const [reportTarget, setReportTarget] = useState(null);
 
   useEffect(() => {
+    if (!user) return;
     loadFriends();
     loadBlocks();
+
+    // Live updates: someone accepting your request, unfriending you,
+    // or a new accepted friendship should reflect immediately.
+    const channel = supabase
+      .channel(`friendships-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'friendships' },
+        (payload) => {
+          const row = payload.new?.id ? payload.new : payload.old;
+          if (row?.requester_id === user.id || row?.addressee_id === user.id) {
+            loadFriends();
+          }
+        }
+      )
+      .subscribe();
+
+    // Safety-net poll: guarantees a friend acceptance or unfriend
+    // shows up within ~15s even if Supabase realtime replication for
+    // `friendships` isn't enabled.
+    const poll = setInterval(loadFriends, 15000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(poll);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey, user]);
 

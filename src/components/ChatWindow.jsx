@@ -9,6 +9,7 @@ import MessageBubble from './MessageBubble.jsx';
 import Avatar from './Avatar.jsx';
 import { computeGradient } from '../theme/fields.js';
 import { QUICK_EMOJIS, formatLastSeen } from '../utils/format.js';
+import { useViewportWidth } from '../hooks/useViewportWidth.js';
 
 function sameId(a, b) {
   return (
@@ -52,15 +53,6 @@ export default function ChatWindow({ friend, onBack }) {
   const friendTypingTimeoutRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
-  // Always-current set of message ids in this conversation, so the
-  // reactions realtime handler (set up once per friend.id) never reads
-  // a stale closure of `messages` when deciding whether a reaction
-  // belongs on screen.
-  const messageIdsRef = useRef(new Set());
-
-  useEffect(() => {
-    messageIdsRef.current = new Set(messages.map((m) => m.id));
-  }, [messages]);
 
   useEffect(() => {
     loadMessages();
@@ -108,30 +100,8 @@ export default function ChatWindow({ friend, onBack }) {
 
     chatChannelRef.current = channel;
 
-    // Live reaction updates for this conversation. Set up once per
-    // friend.id (not per loadMessages() call) and cleaned up alongside
-    // the chat channel below, so switching conversations never leaks a
-    // lingering `reactions-*` realtime channel.
-    const reactionsChannel = supabase
-      .channel(`reactions-${[user.id, friend.id].sort().join('-')}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, (payload) => {
-        const row = payload.new || payload.old;
-        if (!messageIdsRef.current.has(row.message_id)) return;
-        setReactionsByMessage((prev) => {
-          const next = { ...prev };
-          const list = (next[row.message_id] || []).filter(
-            (r) => !(r.user_id === row.user_id && r.emoji === row.emoji)
-          );
-          if (payload.eventType !== 'DELETE') list.push(row);
-          next[row.message_id] = list;
-          return next;
-        });
-      })
-      .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
-      supabase.removeChannel(reactionsChannel);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       if (friendTypingTimeoutRef.current) clearTimeout(friendTypingTimeoutRef.current);
     };
@@ -171,6 +141,27 @@ export default function ChatWindow({ friend, onBack }) {
       grouped[r.message_id].push(r);
     });
     setReactionsByMessage(grouped);
+
+    // Live reaction updates for this conversation's messages
+    const idSet = new Set(messageIds);
+    const channel = supabase
+      .channel(`reactions-${[user.id, friend.id].sort().join('-')}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, (payload) => {
+        const row = payload.new || payload.old;
+        if (!idSet.has(row.message_id) && !messages.find((m) => m.id === row.message_id)) return;
+        setReactionsByMessage((prev) => {
+          const next = { ...prev };
+          const list = (next[row.message_id] || []).filter(
+            (r) => !(r.user_id === row.user_id && r.emoji === row.emoji)
+          );
+          if (payload.eventType !== 'DELETE') list.push(row);
+          next[row.message_id] = list;
+          return next;
+        });
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
   }
 
   async function loadChatSettings() {
@@ -345,15 +336,65 @@ export default function ChatWindow({ friend, onBack }) {
 
   const online = isOnline(friend.id);
 
+  // --------------------------------------------------------
+  // DYNAMIC SIZING — measured from the real viewport width, not
+  // just CSS breakpoints. Inline styles always win over anything
+  // in the stylesheet, so this guarantees the header and input
+  // row fit the screen no matter what state styles.css is in.
+  // --------------------------------------------------------
+  const viewportWidth = useViewportWidth();
+  const isSmall = viewportWidth <= 400;
+  const isMobile = viewportWidth <= 640;
+
+  const headerStyle = isMobile
+    ? { padding: isSmall ? '8px 10px' : '10px 14px', gap: isSmall ? '4px' : '6px' }
+    : undefined;
+
+  const iconBtnStyle = isMobile
+    ? { fontSize: isSmall ? 13 : 15, padding: '4px 2px', flexShrink: 0 }
+    : undefined;
+
+  const nameWrapStyle = isMobile
+    ? { minWidth: 0, flex: '1 1 auto', overflow: 'hidden' }
+    : undefined;
+
+  const nameTextStyle = isMobile
+    ? {
+        fontSize: isSmall ? 13 : 14,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+      }
+    : undefined;
+
+  const inputRowStyle = isMobile
+    ? { padding: isSmall ? '8px' : '10px 12px', gap: isSmall ? '4px' : '6px' }
+    : undefined;
+
+  const textInputStyle = { flex: '1 1 auto', minWidth: 0 };
+
+  const sendBtnStyle = isMobile
+    ? {
+        padding: isSmall ? '8px 12px' : '9px 16px',
+        fontSize: isSmall ? 13 : 14,
+        flexShrink: 0,
+        whiteSpace: 'nowrap',
+      }
+    : { flexShrink: 0 };
+
+  const attachIconStyle = isMobile
+    ? { fontSize: isSmall ? 16 : 18, flexShrink: 0 }
+    : { flexShrink: 0 };
+
   return (
     <div className="chat-window" style={scopedStyle}>
-      <div className="chat-header">
-        <button className="back-btn" onClick={onBack} aria-label="Back to friends list">
+      <div className="chat-header" style={headerStyle}>
+        <button className="back-btn" onClick={onBack} aria-label="Back to friends list" style={iconBtnStyle}>
           ←
         </button>
-        <Avatar url={friend.avatar_url} name={friend.username} size={30} online={online} showStatusDot />
-        <div className="chat-header-name">
-          <div>{friend.username}</div>
+        <Avatar url={friend.avatar_url} name={friend.username} size={isSmall ? 26 : 30} online={online} showStatusDot />
+        <div className="chat-header-name" style={nameWrapStyle}>
+          <div style={nameTextStyle}>{friend.username}</div>
           <div className="chat-header-sub">
             {friendTyping
               ? 'typing...'
@@ -364,7 +405,7 @@ export default function ChatWindow({ friend, onBack }) {
               : ''}
           </div>
         </div>
-        <button className="chat-settings-btn" onClick={() => setSearchOpen((s) => !s)} aria-label="Search">
+        <button className="chat-settings-btn" onClick={() => setSearchOpen((s) => !s)} aria-label="Search" style={iconBtnStyle}>
           🔍
         </button>
         <button
@@ -373,6 +414,7 @@ export default function ChatWindow({ friend, onBack }) {
           disabled={callState !== 'idle'}
           aria-label="Voice call"
           title="Voice call"
+          style={iconBtnStyle}
         >
           📞
         </button>
@@ -382,6 +424,7 @@ export default function ChatWindow({ friend, onBack }) {
           disabled={callState !== 'idle'}
           aria-label="Video call"
           title="Video call"
+          style={iconBtnStyle}
         >
           🎥
         </button>
@@ -389,6 +432,7 @@ export default function ChatWindow({ friend, onBack }) {
           className="chat-settings-btn"
           onClick={() => setShowThemeModal(true)}
           aria-label="Chat settings"
+          style={iconBtnStyle}
         >
           🎨
         </button>
@@ -450,12 +494,13 @@ export default function ChatWindow({ friend, onBack }) {
         </div>
       )}
 
-      <form className="chat-input" onSubmit={sendMessage}>
+      <form className="chat-input" onSubmit={sendMessage} style={inputRowStyle}>
         <button
           type="button"
           className="attach-btn"
           onClick={() => setShowEmojiPicker((s) => !s)}
           aria-label="Emoji"
+          style={attachIconStyle}
         >
           😊
         </button>
@@ -465,6 +510,7 @@ export default function ChatWindow({ friend, onBack }) {
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
           aria-label="Attach image or document"
+          style={attachIconStyle}
         >
           {uploading ? '…' : '📎'}
         </button>
@@ -473,6 +519,7 @@ export default function ChatWindow({ friend, onBack }) {
           className={`attach-btn ${recording ? 'recording' : ''}`}
           onClick={toggleRecording}
           aria-label="Record voice message"
+          style={attachIconStyle}
         >
           {recording ? '⏹' : '🎙️'}
         </button>
@@ -488,8 +535,11 @@ export default function ChatWindow({ friend, onBack }) {
           placeholder="Type a message..."
           value={text}
           onChange={handleTextChange}
+          style={textInputStyle}
         />
-        <button type="submit">Send</button>
+        <button type="submit" style={sendBtnStyle}>
+          Send
+        </button>
       </form>
 
       {showEmojiPicker && (

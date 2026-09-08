@@ -10,6 +10,8 @@ import CallHistoryModal from '../components/CallHistoryModal.jsx';
 import GroupsList from '../components/GroupsList.jsx';
 import GroupChatWindow from '../components/GroupChatWindow.jsx';
 import Avatar from '../components/Avatar.jsx';
+import StatusBar from '../components/StatusBar.jsx';
+import { useViewportWidth } from '../hooks/useViewportWidth.js';
 
 export default function Dashboard() {
   const { profile, signOut } = useAuth();
@@ -27,6 +29,18 @@ export default function Dashboard() {
   // chat window. On desktop this class has no visual effect (see CSS).
   const shellClass = `app-shell${activeChat ? ' chat-open' : ''}`;
 
+  // Same guaranteed dynamic sizing approach as the chat windows — see
+  // ChatWindow.jsx for why inline styles are used here instead of
+  // relying purely on the stylesheet.
+  const viewportWidth = useViewportWidth();
+  const isSmall = viewportWidth <= 400;
+  const isNarrowSidebar = viewportWidth <= 640;
+
+  const brandNameStyle = isNarrowSidebar ? { fontSize: isSmall ? 13 : 14 } : undefined;
+  const actionsBtnStyle = isNarrowSidebar
+    ? { padding: isSmall ? '4px 6px' : '5px 7px', fontSize: isSmall ? 11 : 12 }
+    : undefined;
+
   function selectFriend(f) {
     setActiveGroup(null);
     setActiveFriend(f);
@@ -43,16 +57,16 @@ export default function Dashboard() {
         <div className="sidebar-header">
           <div className="brand">
             <img src="/logo.png" alt="Dragon Chat" className="brand-logo" />
-            <span className="brand-name">Dragon Chat</span>
+            <span className="brand-name" style={brandNameStyle}>Dragon Chat</span>
           </div>
           <div className="sidebar-header-actions">
-            <button className="settings-btn" onClick={() => setShowCallHistory(true)} aria-label="Call history">
+            <button className="settings-btn" onClick={() => setShowCallHistory(true)} aria-label="Call history" style={actionsBtnStyle}>
               📞
             </button>
-            <button className="settings-btn" onClick={() => setShowSettings(true)} aria-label="App settings">
+            <button className="settings-btn" onClick={() => setShowSettings(true)} aria-label="App settings" style={actionsBtnStyle}>
               ⚙️
             </button>
-            <button className="logout-btn" onClick={signOut}>
+            <button className="logout-btn" onClick={signOut} style={actionsBtnStyle}>
               Log out
             </button>
           </div>
@@ -62,6 +76,8 @@ export default function Dashboard() {
           <Avatar url={profile?.avatar_url} name={profile?.username} size={28} />
           <span>{profile?.username ?? 'you'}</span>
         </button>
+
+        <StatusBar />
 
         <SearchFriends onRequestSent={bump} />
         <FriendRequests refreshKey={refreshKey} onChange={bump} />

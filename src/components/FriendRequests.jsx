@@ -7,7 +7,31 @@ export default function FriendRequests({ refreshKey, onChange }) {
   const [requests, setRequests] = useState([]);
 
   useEffect(() => {
+    if (!user) return;
     loadRequests();
+
+    // Live updates: a new incoming request (or someone withdrawing
+    // one) should show up immediately, not just after a reload.
+    const channel = supabase
+      .channel(`friend-requests-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'friendships' },
+        (payload) => {
+          const row = payload.new?.id ? payload.new : payload.old;
+          if (row?.addressee_id === user.id) loadRequests();
+        }
+      )
+      .subscribe();
+
+    // Safety-net poll: guarantees requests show up within ~15s even if
+    // Supabase realtime replication for `friendships` isn't enabled.
+    const poll = setInterval(loadRequests, 15000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(poll);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey, user]);
 

@@ -29,19 +29,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   async function loadProfile(userId) {
-    // maybeSingle(), not single() — a missing profile row (e.g. an
-    // account created before the profile-creation trigger existed)
-    // should degrade gracefully instead of throwing a 406 error that
-    // breaks every feature that reads `profile`.
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
-
-    if (error) {
-      console.error('Failed to load profile:', error);
-    }
+    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
     setProfile(data);
     return data;
   }

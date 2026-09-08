@@ -7,6 +7,7 @@ import { PresenceProvider } from './contexts/PresenceContext.jsx';
 import { UnreadProvider } from './contexts/UnreadContext.jsx';
 import { CallProvider } from './contexts/CallContext.jsx';
 import { GroupCallProvider } from './contexts/GroupCallContext.jsx';
+import { StatusProvider } from './contexts/StatusContext.jsx';
 import './styles.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -17,7 +18,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <UnreadProvider>
             <CallProvider>
               <GroupCallProvider>
-                <App />
+                <StatusProvider>
+                  <App />
+                </StatusProvider>
               </GroupCallProvider>
             </CallProvider>
           </UnreadProvider>
