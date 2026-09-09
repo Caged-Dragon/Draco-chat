@@ -7,6 +7,7 @@ import ResetPassword from './pages/ResetPassword.jsx';
 import IncomingCallModal from './components/IncomingCallModal.jsx';
 import ActiveCallScreen from './components/ActiveCallScreen.jsx';
 import GroupCallScreen from './components/GroupCallScreen.jsx';
+import InstallPrompt from './components/InstallPrompt.jsx';
 
 export default function App() {
   const { user, loading, recoveryMode } = useAuth();
@@ -26,8 +27,9 @@ export default function App() {
     return <ResetPassword />;
   }
 
+  let content;
   if (user) {
-    return (
+    content = (
       <>
         <Dashboard />
         <IncomingCallModal />
@@ -35,11 +37,18 @@ export default function App() {
         <GroupCallScreen />
       </>
     );
+  } else if (!showAuth) {
+    content = <Landing onGetStarted={() => setShowAuth(true)} onLogin={() => setShowAuth(true)} />;
+  } else {
+    content = <Login onBackToLanding={() => setShowAuth(false)} />;
   }
 
-  if (!showAuth) {
-    return <Landing onGetStarted={() => setShowAuth(true)} onLogin={() => setShowAuth(true)} />;
-  }
-
-  return <Login onBackToLanding={() => setShowAuth(false)} />;
+  return (
+    <>
+      {content}
+      {/* Shows on every screen — landing, login, or the app itself —
+          once the browser signals the site is installable. */}
+      <InstallPrompt />
+    </>
+  );
 }

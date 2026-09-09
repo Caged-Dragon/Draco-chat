@@ -1,12 +1,45 @@
-# 🐉 Dragon Chat (v5.4)
+# 🐉 Dragon Chat (v5.5)
 
 *Connect Different. Chat Real.*
 
-A full-featured chat web app: 1:1 and group messaging, voice/video calling
-(1:1 and group), presence, reactions, per-user theming, status/stories,
-and more. Built by **Caged Dragon Studios**.
+A full-featured, installable chat web app: 1:1 and group messaging,
+voice/video calling (1:1 and group), presence, reactions, per-user
+theming, status/stories, and more. Built by **Caged Dragon Studios**.
 
 **Stack:** React + Vite (frontend) · Supabase (auth, database, realtime, storage) · GitHub + Vercel (hosting)
+
+---
+
+## v5.5 — Installable as a native-feeling app (PWA)
+
+Dragon Chat can now be installed straight from the browser, no app
+store needed:
+
+- **Android / Chrome / Edge / desktop Chrome** — a branded "Install
+  Dragon Chat" popup appears automatically once the browser decides
+  the site is installable (usually a couple seconds after load). It
+  uses the browser's real install flow under the hood
+  (`beforeinstallprompt`), just with our own styled button instead of
+  the generic browser banner.
+- **iOS Safari** — Apple doesn't support that same install API, so
+  instead the popup shows the manual steps: *tap Share, then Add to
+  Home Screen*. Once added, it opens full-screen with no Safari
+  address bar, exactly like a native app.
+- Installed app gets a proper home-screen icon, splash behavior, and
+  standalone window — no browser chrome.
+- Basic **offline app-shell caching** via a generated service worker —
+  the app itself will still open without a connection (though live
+  data like chat, calls, and login obviously still need one).
+- The popup respects the person's choice: dismiss it and it won't
+  reappear for 7 days, and it never shows at all once the app is
+  actually installed.
+
+**New/changed files:** `vite.config.js` (PWA plugin config),
+`index.html` (iOS meta tags), `src/components/InstallPrompt.jsx`
+(new), `src/App.jsx` (renders it globally), plus generated icons in
+`public/` (`icon-192.png`, `icon-512.png`, `icon-512-maskable.png`,
+`apple-touch-icon.png`). **New dependency:** `vite-plugin-pwa` — run
+`npm install` after pulling this update. No Supabase/schema changes.
 
 ---
 

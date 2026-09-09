@@ -2732,3 +2732,127 @@ body {
     bottom: 90px;
   }
 }
+
+/* ============================================================
+   PWA INSTALL PROMPT
+   ============================================================ */
+
+.install-prompt-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 12, 36, 0.35);
+  z-index: 90;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+}
+
+.install-prompt-card {
+  background: var(--panel);
+  width: 100%;
+  max-width: 420px;
+  border-radius: 20px 20px 0 0;
+  padding: 22px;
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  animation: installSlideUp 0.3s ease;
+}
+
+@keyframes installSlideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (min-width: 480px) {
+  .install-prompt-overlay {
+    align-items: center;
+    padding: 20px;
+  }
+
+  .install-prompt-card {
+    border-radius: 20px;
+    animation: none;
+  }
+}
+
+.install-prompt-logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 10px rgba(239, 68, 68, 0.3));
+}
+
+.install-prompt-text h3 {
+  margin: 0 0 6px;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-weight: 800;
+  font-size: 18px;
+}
+
+.install-prompt-text p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.install-prompt-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.install-prompt-actions button {
+  flex: 1;
+  padding: 11px;
+  border: none;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  background: var(--gradient);
+  color: white;
+}
+
+.install-prompt-actions .ghost-btn {
+  background: var(--panel-alt) !important;
+  color: var(--text-dim) !important;
+}
+
+.install-prompt-ios-steps {
+  width: 100%;
+}
+
+.install-prompt-ios-steps p {
+  font-size: 13px;
+  color: var(--text);
+  margin: 0 0 12px;
+  line-height: 1.6;
+}
+
+.install-ios-icon {
+  display: inline-block;
+}
+
+.install-prompt-ios-steps button {
+  width: 100%;
+  padding: 11px;
+  border: none;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  background: var(--gradient);
+  color: white;
+}
