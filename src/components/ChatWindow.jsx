@@ -7,9 +7,12 @@ import { useCall } from '../contexts/CallContext.jsx';
 import ChatThemeModal from './ChatThemeModal.jsx';
 import MessageBubble from './MessageBubble.jsx';
 import Avatar from './Avatar.jsx';
+import GifPicker from './GifPicker.jsx';
+import ForwardModal from './ForwardModal.jsx';
 import { computeGradient } from '../theme/fields.js';
 import { QUICK_EMOJIS, formatLastSeen } from '../utils/format.js';
 import { useViewportWidth } from '../hooks/useViewportWidth.js';
+import { sendPushNotification } from '../hooks/usePushNotifications.js';
 
 function sameId(a, b) {
   return (
@@ -23,7 +26,7 @@ const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024; // 15MB
 const TYPING_STOP_DELAY = 3000;
 
 export default function ChatWindow({ friend, onBack }) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { isOnline } = usePresence();
   const { markRead } = useUnread();
   const { startCall, callState } = useCall();
@@ -35,11 +38,14 @@ export default function ChatWindow({ friend, onBack }) {
   const [attachError, setAttachError] = useState('');
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showGifPicker, setShowGifPicker] = useState(false);
+  const [forwardingMessage, setForwardingMessage] = useState(null);
   const [replyingTo, setReplyingTo] = useState(null);
   const [friendTyping, setFriendTyping] = useState(false);
   const [recording, setRecording] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [disappearingSeconds, setDisappearingSeconds] = useState(0);
 
   // This chat's OWN theme overrides only — merged on top of the global
   // theme via inline CSS variables scoped to this component's root div.
@@ -113,12 +119,14 @@ export default function ChatWindow({ friend, onBack }) {
   }, [messages]);
 
   async function loadMessages() {
+    const nowIso = new Date().toISOString();
     const { data, error } = await supabase
       .from('messages')
       .select('*')
       .or(
         `and(sender_id.eq.${user.id},receiver_id.eq.${friend.id}),and(sender_id.eq.${friend.id},receiver_id.eq.${user.id})`
       )
+      .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
       .order('created_at', { ascending: true });
 
     if (error) {
@@ -167,13 +175,28 @@ export default function ChatWindow({ friend, onBack }) {
   async function loadChatSettings() {
     const { data } = await supabase
       .from('chat_settings')
-      .select('theme, wallpaper_url')
+      .select('theme, wallpaper_url, disappearing_seconds')
       .eq('owner_id', user.id)
       .eq('friend_id', friend.id)
       .maybeSingle();
 
     setChatTheme(data?.theme ?? {});
     setChatWallpaper(data?.wallpaper_url ?? null);
+    setDisappearingSeconds(data?.disappearing_seconds || 0);
+  }
+
+  async function updateDisappearing(seconds) {
+    setDisappearingSeconds(seconds);
+    await supabase.from('chat_settings').upsert(
+      {
+        owner_id: user.id,
+        friend_id: friend.id,
+        disappearing_seconds: seconds || null,
+        theme: chatTheme,
+        wallpaper_url: chatWallpaper,
+      },
+      { onConflict: 'owner_id,friend_id' }
+    );
   }
 
   function sendTyping() {
@@ -198,14 +221,20 @@ export default function ChatWindow({ friend, onBack }) {
     setReplyingTo(null);
     chatChannelRef.current?.send({ type: 'broadcast', event: 'stop-typing', payload: {} });
 
+    const expiresAt = disappearingSeconds
+      ? new Date(Date.now() + disappearingSeconds * 1000).toISOString()
+      : null;
+
     const { error } = await supabase.from('messages').insert({
       sender_id: user.id,
       receiver_id: friend.id,
       content,
       reply_to_id: replyingTo?.id ?? null,
+      expires_at: expiresAt,
     });
 
     if (error) setAttachError(error.message);
+    else sendPushNotification(friend.id, profile?.username || 'New message', content, '/');
   }
 
   async function handleAttachmentPick(e) {
@@ -232,6 +261,9 @@ export default function ChatWindow({ friend, onBack }) {
 
     const { data: pub } = supabase.storage.from('chat-attachments').getPublicUrl(path);
     const attachmentType = file.type.startsWith('image/') ? 'image' : 'file';
+    const expiresAt = disappearingSeconds
+      ? new Date(Date.now() + disappearingSeconds * 1000).toISOString()
+      : null;
 
     const { error: insertError } = await supabase.from('messages').insert({
       sender_id: user.id,
@@ -239,10 +271,29 @@ export default function ChatWindow({ friend, onBack }) {
       attachment_url: pub.publicUrl,
       attachment_type: attachmentType,
       attachment_name: file.name,
+      expires_at: expiresAt,
     });
 
     if (insertError) setAttachError(insertError.message);
+    else sendPushNotification(friend.id, profile?.username || 'New message', 'Sent an attachment', '/');
     setUploading(false);
+  }
+
+  async function handleGifSelect(url) {
+    setShowGifPicker(false);
+    const expiresAt = disappearingSeconds
+      ? new Date(Date.now() + disappearingSeconds * 1000).toISOString()
+      : null;
+    const { error } = await supabase.from('messages').insert({
+      sender_id: user.id,
+      receiver_id: friend.id,
+      attachment_url: url,
+      attachment_type: 'gif',
+      attachment_name: 'GIF',
+      expires_at: expiresAt,
+    });
+    if (error) setAttachError(error.message);
+    else sendPushNotification(friend.id, profile?.username || 'New message', 'Sent a GIF', '/');
   }
 
   async function toggleRecording() {
@@ -317,6 +368,13 @@ export default function ChatWindow({ friend, onBack }) {
     await supabase.from('messages').update({ deleted_at: new Date().toISOString() }).eq('id', messageId);
   }
 
+  async function handleTogglePin(message) {
+    await supabase
+      .from('messages')
+      .update({ pinned_at: message.pinned_at ? null : new Date().toISOString() })
+      .eq('id', message.id);
+  }
+
   function insertEmoji(emoji) {
     setText((t) => t + emoji);
     setShowEmojiPicker(false);
@@ -325,6 +383,8 @@ export default function ChatWindow({ friend, onBack }) {
   const filteredMessages = searchQuery.trim()
     ? messages.filter((m) => m.content?.toLowerCase().includes(searchQuery.trim().toLowerCase()))
     : messages;
+
+  const pinnedMessage = [...messages].reverse().find((m) => m.pinned_at && !m.deleted_at);
 
   // Only the CSS variables this chat has actually overridden get
   // applied here — everything else falls through to the global theme
@@ -458,6 +518,13 @@ export default function ChatWindow({ friend, onBack }) {
         </div>
       )}
 
+      {pinnedMessage && (
+        <div className="pinned-banner">
+          📌 {pinnedMessage.content || pinnedMessage.attachment_name || 'Pinned message'}
+          <button onClick={() => handleTogglePin(pinnedMessage)}>Unpin</button>
+        </div>
+      )}
+
       <div className="chat-messages">
         {filteredMessages.map((m) => {
           const quoted = m.reply_to_id ? messages.find((x) => x.id === m.reply_to_id) : null;
@@ -473,6 +540,8 @@ export default function ChatWindow({ friend, onBack }) {
               onEdit={(newContent) => handleEditMessage(m.id, newContent)}
               onDelete={() => handleDeleteMessage(m.id)}
               onReply={() => setReplyingTo(m)}
+              onForward={() => setForwardingMessage(m)}
+              onTogglePin={() => handleTogglePin(m)}
               highlight={!!searchQuery.trim()}
             />
           );
@@ -503,6 +572,15 @@ export default function ChatWindow({ friend, onBack }) {
           style={attachIconStyle}
         >
           😊
+        </button>
+        <button
+          type="button"
+          className="attach-btn"
+          onClick={() => setShowGifPicker((s) => !s)}
+          aria-label="Send GIF"
+          style={attachIconStyle}
+        >
+          GIF
         </button>
         <button
           type="button"
@@ -552,11 +630,19 @@ export default function ChatWindow({ friend, onBack }) {
         </div>
       )}
 
+      {showGifPicker && <GifPicker onSelect={handleGifSelect} onClose={() => setShowGifPicker(false)} />}
+
+      {forwardingMessage && (
+        <ForwardModal message={forwardingMessage} onClose={() => setForwardingMessage(null)} />
+      )}
+
       {showThemeModal && (
         <ChatThemeModal
           friend={friend}
           theme={chatTheme}
           wallpaperUrl={chatWallpaper}
+          disappearingSeconds={disappearingSeconds}
+          onDisappearingChange={updateDisappearing}
           onChange={(nextTheme, nextWallpaper) => {
             setChatTheme(nextTheme);
             setChatWallpaper(nextWallpaper);

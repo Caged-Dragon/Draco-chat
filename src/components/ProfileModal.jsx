@@ -3,12 +3,14 @@ import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import Avatar from './Avatar.jsx';
 import { PRESENCE_LABELS } from '../utils/format.js';
+import { usePushNotifications } from '../hooks/usePushNotifications.js';
 
 const STATUS_OPTIONS = ['online', 'away', 'busy', 'dnd'];
 const USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,20}$/;
 
 export default function ProfileModal({ onClose }) {
   const { user, profile, refreshProfile } = useAuth();
+  const push = usePushNotifications();
   const [username, setUsername] = useState(profile?.username || '');
   const [statusMessage, setStatusMessage] = useState(profile?.status_message || '');
   const [presenceStatus, setPresenceStatus] = useState(profile?.presence_status || 'online');
@@ -145,6 +147,26 @@ export default function ProfileModal({ onClose }) {
             </select>
           </label>
         </div>
+
+        <div className="push-toggle-row">
+          <div>
+            <span className="push-toggle-label">🔔 Push notifications</span>
+            <p className="dim small">Get notified of new messages even when the app is closed.</p>
+          </div>
+          {push.supported ? (
+            <button
+              type="button"
+              className={push.subscribed ? 'ghost-btn' : ''}
+              onClick={push.subscribed ? push.disable : push.enable}
+              disabled={push.busy}
+            >
+              {push.busy ? '...' : push.subscribed ? 'Disable' : 'Enable'}
+            </button>
+          ) : (
+            <span className="dim small">Not supported on this browser</span>
+          )}
+        </div>
+        {push.error && <p className="error-text small">{push.error}</p>}
 
         {error && <p className="error-text">{error}</p>}
         {saved && <p className="info-text">Saved!</p>}

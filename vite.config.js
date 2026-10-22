@@ -6,6 +6,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       registerType: 'autoUpdate',
       includeAssets: ['logo.png', 'apple-touch-icon.png'],
       manifest: {
@@ -19,40 +22,13 @@ export default defineConfig({
         start_url: '/',
         scope: '/',
         icons: [
-          {
-            src: '/icon-192.png',
-            sizes: '192x192',
-            type: 'image/png',
-          },
-          {
-            src: '/icon-512.png',
-            sizes: '512x512',
-            type: 'image/png',
-          },
-          {
-            src: '/icon-512-maskable.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable',
-          },
+          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: '/icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
-      workbox: {
-        // Cache the built app shell for offline loading. Live data
-        // (chat, auth, calls) still requires a network connection —
-        // this only means the app itself opens instead of showing a
-        // browser error when offline.
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,png,svg,ico}'],
-        runtimeCaching: [
-          {
-            urlPattern: ({ url }) => url.origin === self.location.origin,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'dragon-chat-shell',
-              expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 7 },
-            },
-          },
-        ],
       },
     }),
   ],

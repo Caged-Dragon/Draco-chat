@@ -5,9 +5,23 @@ import { useTheme } from '../contexts/ThemeContext.jsx';
 import { THEME_TABS, DEFAULT_THEME } from '../theme/fields.js';
 import AppPreviewMock from './AppPreviewMock.jsx';
 
+const DISAPPEAR_OPTIONS = [
+  { label: 'Off', value: 0 },
+  { label: '24 hours', value: 24 * 3600 },
+  { label: '7 days', value: 7 * 24 * 3600 },
+];
+
 // theme/wallpaperUrl here are only the OVERRIDES for this one chat —
 // an empty/unset field means "use the global theme's color instead".
-export default function ChatThemeModal({ friend, theme, wallpaperUrl, onChange, onClose }) {
+export default function ChatThemeModal({
+  friend,
+  theme,
+  wallpaperUrl,
+  disappearingSeconds,
+  onDisappearingChange,
+  onChange,
+  onClose,
+}) {
   const { user } = useAuth();
   const { theme: globalTheme, wallpaperUrl: globalWallpaper } = useTheme();
   const [activeTab, setActiveTab] = useState(THEME_TABS[0].id);
@@ -113,10 +127,35 @@ export default function ChatThemeModal({ friend, theme, wallpaperUrl, onChange, 
             <span className="theme-tab-icon">🖼️</span>
             Wallpaper
           </button>
+          <button
+            type="button"
+            className={`theme-tab ${activeTab === 'disappearing' ? 'active' : ''}`}
+            onClick={() => setActiveTab('disappearing')}
+          >
+            <span className="theme-tab-icon">⏱</span>
+            Disappearing
+          </button>
         </div>
 
         <div className="theme-tab-panel">
-          {activeTab === 'wallpaper' ? (
+          {activeTab === 'disappearing' ? (
+            <div className="field-list">
+              <label className="field-row">
+                <span>Disappearing messages</span>
+                <select
+                  value={disappearingSeconds}
+                  onChange={(e) => onDisappearingChange(Number(e.target.value))}
+                >
+                  {DISAPPEAR_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="dim small">New messages you send will auto-hide after this long.</p>
+            </div>
+          ) : activeTab === 'wallpaper' ? (
             <div className="field-list">
               <div className="wallpaper-actions">
                 <button type="button" onClick={() => fileInputRef.current?.click()} disabled={busy}>

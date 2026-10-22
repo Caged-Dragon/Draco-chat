@@ -11,6 +11,8 @@ export default function MessageBubble({
   onEdit,
   onDelete,
   onReply,
+  onForward,
+  onTogglePin,
   highlight,
 }) {
   const [showMenu, setShowMenu] = useState(false);
@@ -63,6 +65,9 @@ export default function MessageBubble({
             />
           </a>
         )}
+        {!isDeleted && message.attachment_type === 'gif' && (
+          <img src={message.attachment_url} alt="GIF" className="message-image" />
+        )}
         {!isDeleted && message.attachment_type === 'file' && (
           <a
             href={message.attachment_url}
@@ -111,6 +116,11 @@ export default function MessageBubble({
         <div className="bubble-meta">
           <span>{formatMessageTime(message.created_at)}</span>
           {message.edited_at && !isDeleted && <span className="edited-tag">edited</span>}
+          {message.expires_at && !isDeleted && (
+            <span className="edited-tag" title="Disappearing message">
+              ⏱
+            </span>
+          )}
           {isMine && !isDeleted && (
             <span className={`read-tick ${message.read_at ? 'read' : ''}`}>
               {message.read_at ? '✓✓' : '✓'}
@@ -139,6 +149,12 @@ export default function MessageBubble({
             </button>
             <button onClick={onReply} title="Reply">
               ↩
+            </button>
+            <button onClick={onForward} title="Forward">
+              ➡️
+            </button>
+            <button onClick={onTogglePin} title={message.pinned_at ? 'Unpin' : 'Pin'}>
+              📌
             </button>
             {isMine && (
               <>

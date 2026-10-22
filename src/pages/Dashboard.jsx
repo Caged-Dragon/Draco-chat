@@ -11,6 +11,7 @@ import GroupsList from '../components/GroupsList.jsx';
 import GroupChatWindow from '../components/GroupChatWindow.jsx';
 import Avatar from '../components/Avatar.jsx';
 import StatusBar from '../components/StatusBar.jsx';
+import GlobalSearchModal from '../components/GlobalSearchModal.jsx';
 import { useViewportWidth } from '../hooks/useViewportWidth.js';
 
 export default function Dashboard() {
@@ -23,6 +24,7 @@ export default function Dashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showCallHistory, setShowCallHistory] = useState(false);
+  const [showGlobalSearch, setShowGlobalSearch] = useState(false);
 
   const activeChat = activeFriend || activeGroup;
   // On mobile, "chat-open" swaps from the friends list to the full-screen
@@ -60,6 +62,9 @@ export default function Dashboard() {
             <span className="brand-name" style={brandNameStyle}>Dragon Chat</span>
           </div>
           <div className="sidebar-header-actions">
+            <button className="settings-btn" onClick={() => setShowGlobalSearch(true)} aria-label="Search everything" style={actionsBtnStyle}>
+              🔍
+            </button>
             <button className="settings-btn" onClick={() => setShowCallHistory(true)} aria-label="Call history" style={actionsBtnStyle}>
               📞
             </button>
@@ -102,6 +107,13 @@ export default function Dashboard() {
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
       {showCallHistory && <CallHistoryModal onClose={() => setShowCallHistory(false)} />}
+      {showGlobalSearch && (
+        <GlobalSearchModal
+          onClose={() => setShowGlobalSearch(false)}
+          onOpenFriend={selectFriend}
+          onOpenGroup={selectGroup}
+        />
+      )}
     </div>
   );
 }

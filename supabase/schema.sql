@@ -15,12 +15,14 @@ create table if not exists public.profiles (
 alter table public.profiles enable row level security;
 
 -- Anyone logged in can search/view basic profile info
+drop policy if exists "Profiles are viewable by authenticated users" on public.profiles;
 create policy "Profiles are viewable by authenticated users"
 on public.profiles for select
 to authenticated
 using (true);
 
 -- Users can only edit their own profile
+drop policy if exists "Users can update own profile" on public.profiles;
 create policy "Users can update own profile"
 on public.profiles for update
 to authenticated
@@ -116,18 +118,21 @@ create table if not exists public.friendships (
 alter table public.friendships enable row level security;
 
 -- Either side of the friendship (or request) can see the row
+drop policy if exists "Users can view their own friendships" on public.friendships;
 create policy "Users can view their own friendships"
 on public.friendships for select
 to authenticated
 using (auth.uid() = requester_id or auth.uid() = addressee_id);
 
 -- Only the requester can create a new request
+drop policy if exists "Users can send friend requests" on public.friendships;
 create policy "Users can send friend requests"
 on public.friendships for insert
 to authenticated
 with check (auth.uid() = requester_id);
 
 -- Only the addressee can accept (update status) a pending request
+drop policy if exists "Addressee can accept a friend request" on public.friendships;
 create policy "Addressee can accept a friend request"
 on public.friendships for update
 to authenticated
@@ -135,6 +140,7 @@ using (auth.uid() = addressee_id)
 with check (auth.uid() = addressee_id);
 
 -- Either side can delete: addressee declines, requester cancels/unfriends
+drop policy if exists "Either side can remove a friendship or request" on public.friendships;
 create policy "Either side can remove a friendship or request"
 on public.friendships for delete
 to authenticated
@@ -167,11 +173,13 @@ alter table public.messages add constraint messages_content_or_attachment
 
 alter table public.messages enable row level security;
 
+drop policy if exists "Users can view their own conversations" on public.messages;
 create policy "Users can view their own conversations"
 on public.messages for select
 to authenticated
 using (auth.uid() = sender_id or auth.uid() = receiver_id);
 
+drop policy if exists "Users can send messages" on public.messages;
 create policy "Users can send messages"
 on public.messages for insert
 to authenticated
@@ -201,6 +209,7 @@ create table if not exists public.user_settings (
 
 alter table public.user_settings enable row level security;
 
+drop policy if exists "Users manage their own global settings" on public.user_settings;
 create policy "Users manage their own global settings"
 on public.user_settings for all
 to authenticated
@@ -222,6 +231,7 @@ create table if not exists public.chat_settings (
 
 alter table public.chat_settings enable row level security;
 
+drop policy if exists "Users manage their own chat settings" on public.chat_settings;
 create policy "Users manage their own chat settings"
 on public.chat_settings for all
 to authenticated
@@ -697,3 +707,120 @@ create policy "Users can delete their own status media"
 on storage.objects for delete
 to authenticated
 using (bucket_id = 'status-media' and owner = auth.uid());
+
+
+-- ============================================================
+-- v5.6 — PUSH NOTIFICATIONS
+-- ============================================================
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth_key text not null,
+  created_at timestamptz default now()
+);
+
+alter table public.push_subscriptions enable row level security;
+
+drop policy if exists "Users manage their own push subscriptions" on public.push_subscriptions;
+create policy "Users manage their own push subscriptions"
+on public.push_subscriptions for all
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+
+-- ============================================================
+-- v5.6 — GROUP CHAT PARITY: reactions + read tracking
+-- ============================================================
+create table if not exists public.group_message_reactions (
+  id uuid primary key default gen_random_uuid(),
+  message_id uuid references public.group_messages(id) on delete cascade not null,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  emoji text not null,
+  created_at timestamptz default now(),
+  unique (message_id, user_id, emoji)
+);
+
+alter table public.group_message_reactions enable row level security;
+
+drop policy if exists "Members can view group message reactions" on public.group_message_reactions;
+create policy "Members can view group message reactions"
+on public.group_message_reactions for select
+to authenticated
+using (
+  exists (
+    select 1 from public.group_messages gm
+    join public.group_members mem on mem.group_id = gm.group_id
+    where gm.id = message_id and mem.user_id = auth.uid()
+  )
+);
+
+drop policy if exists "Members can add their own group reactions" on public.group_message_reactions;
+create policy "Members can add their own group reactions"
+on public.group_message_reactions for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+drop policy if exists "Members can remove their own group reactions" on public.group_message_reactions;
+create policy "Members can remove their own group reactions"
+on public.group_message_reactions for delete
+to authenticated
+using (auth.uid() = user_id);
+
+alter publication supabase_realtime add table public.group_message_reactions;
+
+alter table public.group_members add column if not exists last_read_at timestamptz default now();
+
+
+-- ============================================================
+-- v5.6 — @MENTIONS
+-- ============================================================
+alter table public.group_messages add column if not exists mentions uuid[] default '{}'::uuid[];
+
+
+-- ============================================================
+-- v5.6 — DISAPPEARING MESSAGES
+-- ============================================================
+alter table public.messages add column if not exists expires_at timestamptz;
+alter table public.group_messages add column if not exists expires_at timestamptz;
+alter table public.chat_settings add column if not exists disappearing_seconds integer;
+alter table public.groups add column if not exists disappearing_seconds integer;
+
+
+-- ============================================================
+-- v5.6 — PINNING
+-- ============================================================
+alter table public.messages add column if not exists pinned_at timestamptz;
+alter table public.group_messages add column if not exists pinned_at timestamptz;
+
+
+-- ============================================================
+-- v5.6 — MUTE & ARCHIVE
+-- ============================================================
+create table if not exists public.chat_preferences (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid references public.profiles(id) on delete cascade not null,
+  friend_id uuid references public.profiles(id) on delete cascade,
+  group_id uuid references public.groups(id) on delete cascade,
+  muted boolean not null default false,
+  archived boolean not null default false,
+  updated_at timestamptz default now(),
+  constraint chat_preferences_target_check check (
+    (friend_id is not null and group_id is null) or (friend_id is null and group_id is not null)
+  ),
+  unique (owner_id, friend_id),
+  unique (owner_id, group_id)
+);
+
+alter table public.chat_preferences enable row level security;
+
+drop policy if exists "Users manage their own chat preferences" on public.chat_preferences;
+create policy "Users manage their own chat preferences"
+on public.chat_preferences for all
+to authenticated
+using (auth.uid() = owner_id)
+with check (auth.uid() = owner_id);
+
+alter publication supabase_realtime add table public.chat_preferences;
