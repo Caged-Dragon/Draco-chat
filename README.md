@@ -10,6 +10,27 @@ theming, status/stories, and more. Built by **Caged Dragon Studios**.
 
 ---
 
+## v5.7 — Security & database clean-up, legal pages
+
+- **Privacy Policy** (`public/privacy.html` → `/privacy.html`) and **Terms &
+  Conditions** (`public/terms.html` → `/terms.html`) are standalone pages,
+  linked from the landing page, the login/sign-up form and Settings.
+  Search both files for the yellow `[CONTACT EMAIL]`, `[STUDIO ADDRESS…]`
+  and `[CITY…]` placeholders and fill them in before launch.
+- `supabase/schema.sql` now mirrors the live database exactly (fresh-install safe).
+- Database fixes: missing v5.6 tables/columns added (`push_subscriptions`,
+  `group_message_reactions`, `chat_preferences`, pins, mentions, disappearing
+  messages, read markers); friend requests can no longer be forged as
+  "accepted"; messages require an accepted friendship; receivers/members can
+  only mark-read or pin (not edit) others' messages; nobody can self-join a
+  group; user emails are hidden from other users; storage uploads are limited
+  to your own folder with size/type limits and no public listing; foreign-key
+  indexes added; a `pg_cron` job purges expired disappearing messages.
+- `send-push` now requires a signed-in caller who is an accepted friend of the
+  recipient. It needs the three VAPID secrets set (see the push section).
+- The app reads its own profile with an explicit column list (the `email`
+  column is no longer readable through the API — use `user.email`).
+
 ## v5.5 — Installable as a native-feeling app (PWA)
 
 Dragon Chat can now be installed straight from the browser, no app

@@ -2856,3 +2856,23 @@ body {
   background: var(--gradient);
   color: white;
 }
+
+
+/* Legal links (Privacy Policy / Terms & Conditions) */
+.legal-links {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  margin: 10px 0 0;
+}
+.legal-links a {
+  color: var(--purple);
+  text-decoration: none;
+  font-weight: 600;
+}
+.legal-links a:hover {
+  text-decoration: underline;
+}
+.legal-consent {
+  margin: 14px 0 6px;
+}

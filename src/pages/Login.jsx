@@ -229,6 +229,11 @@ export default function Login({ onBackToLanding }) {
           )}
         </p>
       </form>
+      <p className="legal-links legal-consent">
+        By continuing you agree to our{' '}
+        <a href="/terms.html" target="_blank" rel="noopener noreferrer">Terms &amp; Conditions</a> and{' '}
+        <a href="/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+      </p>
       <p className="studio-credit">Built by Caged Dragon Studios</p>
     </div>
   );

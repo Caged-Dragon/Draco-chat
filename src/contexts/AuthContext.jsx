@@ -29,7 +29,11 @@ export function AuthProvider({ children }) {
   }, []);
 
   async function loadProfile(userId) {
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, username, avatar_url, status_message, presence_status, last_seen_at, user_number, created_at')
+      .eq('id', userId)
+      .single();
     setProfile(data);
     return data;
   }

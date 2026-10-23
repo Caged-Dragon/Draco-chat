@@ -116,6 +116,12 @@ export default function SettingsModal({ onClose }) {
 
         {error && <p className="error-text">{error}</p>}
 
+        <p className="legal-links">
+          <a href="/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+          {' · '}
+          <a href="/terms.html" target="_blank" rel="noopener noreferrer">Terms &amp; Conditions</a>
+        </p>
+
         <div className="modal-footer">
           <button type="button" className="ghost-btn" onClick={handleReset} disabled={busy}>
             Reset to default

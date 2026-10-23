@@ -66,6 +66,11 @@ export default function Landing({ onGetStarted, onLogin }) {
 
       <footer className="landing-footer">
         <p className="studio-credit">Built by Caged Dragon Studios</p>
+        <p className="legal-links">
+          <a href="/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+          {' · '}
+          <a href="/terms.html" target="_blank" rel="noopener noreferrer">Terms &amp; Conditions</a>
+        </p>
       </footer>
     </div>
   );
