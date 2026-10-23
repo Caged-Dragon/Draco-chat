@@ -41,6 +41,9 @@ revoke select on public.profiles from anon, authenticated;
 grant select (id, username, created_at, avatar_url, status_message, presence_status, last_seen_at, user_number)
   on public.profiles to authenticated;
 revoke all on all tables in schema public from anon;
+-- Users may edit only these columns of their own profile row
+grant update (username, avatar_url, status_message, presence_status, last_seen_at)
+  on public.profiles to authenticated;
 
 create or replace function public.lock_user_number()
 returns trigger language plpgsql set search_path = '' as $$
@@ -657,3 +660,49 @@ revoke execute on function private.purge_expired_content() from public, anon, au
 create extension if not exists pg_cron with schema pg_catalog;
 select cron.unschedule(jobid) from cron.job where jobname = 'dracochat-purge-expired';
 select cron.schedule('dracochat-purge-expired', '*/10 * * * *', 'select private.purge_expired_content();');
+
+-- ------------------------------------------------------------
+-- 13) ANTI-SPAM RATE LIMITS (messages, group messages, friend requests, reports)
+-- ------------------------------------------------------------
+create or replace function private.enforce_rate_limit()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare
+  recent int;
+begin
+  if auth.uid() is null then return new; end if;
+  if tg_table_name = 'messages' then
+    select count(*) into recent from public.messages
+      where sender_id = new.sender_id and created_at > now() - interval '10 seconds';
+    if recent >= 20 then raise exception 'You are sending messages too fast. Please slow down.' using errcode = 'P0001'; end if;
+  elsif tg_table_name = 'group_messages' then
+    select count(*) into recent from public.group_messages
+      where sender_id = new.sender_id and created_at > now() - interval '10 seconds';
+    if recent >= 20 then raise exception 'You are sending messages too fast. Please slow down.' using errcode = 'P0001'; end if;
+  elsif tg_table_name = 'friendships' then
+    select count(*) into recent from public.friendships
+      where requester_id = new.requester_id and created_at > now() - interval '1 hour';
+    if recent >= 30 then raise exception 'Too many friend requests. Please try again later.' using errcode = 'P0001'; end if;
+  elsif tg_table_name = 'reports' then
+    select count(*) into recent from public.reports
+      where reporter_id = new.reporter_id and created_at > now() - interval '1 day';
+    if recent >= 20 then raise exception 'Too many reports submitted today.' using errcode = 'P0001'; end if;
+  end if;
+  return new;
+end; $$;
+revoke execute on function private.enforce_rate_limit() from public, anon, authenticated;
+
+drop trigger if exists rate_limit_messages on public.messages;
+create trigger rate_limit_messages before insert on public.messages
+  for each row execute function private.enforce_rate_limit();
+drop trigger if exists rate_limit_group_messages on public.group_messages;
+create trigger rate_limit_group_messages before insert on public.group_messages
+  for each row execute function private.enforce_rate_limit();
+drop trigger if exists rate_limit_friendships on public.friendships;
+create trigger rate_limit_friendships before insert on public.friendships
+  for each row execute function private.enforce_rate_limit();
+drop trigger if exists rate_limit_reports on public.reports;
+create trigger rate_limit_reports before insert on public.reports
+  for each row execute function private.enforce_rate_limit();
+
+-- Trim client privileges that are never needed
+revoke truncate, references, trigger on all tables in schema public from authenticated;
