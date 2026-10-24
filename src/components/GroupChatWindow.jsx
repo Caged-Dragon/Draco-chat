@@ -1,16 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useGroupCall } from '../contexts/GroupCallContext.jsx';
+import { useUnread } from '../contexts/UnreadContext.jsx';
 import Avatar from './Avatar.jsx';
-import GifPicker from './GifPicker.jsx';
+import GifPicker, { gifsEnabled } from './GifPicker.jsx';
 import ForwardModal from './ForwardModal.jsx';
 import { linkifyParts, formatMessageTime, QUICK_EMOJIS, REACTION_EMOJIS } from '../utils/format.js';
 import { useViewportWidth } from '../hooks/useViewportWidth.js';
-import { sendPushNotification } from '../hooks/usePushNotifications.js';
 
 const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
 const TYPING_STOP_DELAY = 3000;
+const PAGE_SIZE = 50;
 const DISAPPEAR_OPTIONS = [
   { label: 'Off', value: 0 },
   { label: '24 hours', value: 24 * 3600 },
@@ -32,6 +33,7 @@ function highlightMentions(text, mentionUsernames) {
 export default function GroupChatWindow({ group, onBack }) {
   const { user, profile } = useAuth();
   const { joinCall, activeCall } = useGroupCall();
+  const { markGroupRead, setActiveGroup } = useUnread();
 
   const [messages, setMessages] = useState([]);
   const [reactionsByMessage, setReactionsByMessage] = useState({});
@@ -47,8 +49,16 @@ export default function GroupChatWindow({ group, onBack }) {
   const [showMembers, setShowMembers] = useState(false);
   const [mentionQuery, setMentionQuery] = useState(null);
   const [disappearingSeconds, setDisappearingSeconds] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [fetchedPinned, setFetchedPinned] = useState(null);
+  const [addCandidates, setAddCandidates] = useState(null);
+  const [panelError, setPanelError] = useState('');
 
   const bottomRef = useRef(null);
+  const listRef = useRef(null);
+  const prependRef = useRef(null);
+  const membersRef = useRef([]);
   const fileInputRef = useRef(null);
   const channelRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -65,14 +75,27 @@ export default function GroupChatWindow({ group, onBack }) {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'group_messages', filter: `group_id=eq.${group.id}` },
         (payload) => {
-          setMessages((prev) => [...prev, payload.new]);
+          // Realtime rows don't include the joined sender profile, so attach it here
+          const senderProfile = membersRef.current.find((mm) => mm.id === payload.new.sender_id);
+          const withSender = {
+            ...payload.new,
+            sender: senderProfile
+              ? { id: senderProfile.id, username: senderProfile.username, avatar_url: senderProfile.avatar_url }
+              : undefined,
+          };
+          setMessages((prev) => [...prev, withSender]);
           if (payload.new.sender_id !== user.id) markRead();
         }
       )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'group_messages', filter: `group_id=eq.${group.id}` },
-        (payload) => setMessages((prev) => prev.map((m) => (m.id === payload.new.id ? payload.new : m)))
+        (payload) => {
+          setMessages((prev) => prev.map((m) => (m.id === payload.new.id ? { ...payload.new, sender: m.sender } : m)));
+          setFetchedPinned((fp) =>
+            fp && fp.id === payload.new.id ? (payload.new.pinned_at && !payload.new.deleted_at ? { ...payload.new, sender: fp.sender } : null) : fp
+          );
+        }
       )
       .on(
         'postgres_changes',
@@ -90,7 +113,7 @@ export default function GroupChatWindow({ group, onBack }) {
       )
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'group_members', filter: `group_id=eq.${group.id}` },
+        { event: '*', schema: 'public', table: 'group_members', filter: `group_id=eq.${group.id}` },
         () => loadMembers()
       )
       .on('broadcast', { event: 'typing' }, ({ payload }) => {
@@ -114,7 +137,21 @@ export default function GroupChatWindow({ group, onBack }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [group.id]);
 
+  // Tell the unread tracker which group is open so its badge stays at zero
   useEffect(() => {
+    setActiveGroup(group.id);
+    return () => setActiveGroup(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [group.id]);
+
+  useLayoutEffect(() => {
+    // Keep the reader's place when older messages are prepended
+    if (prependRef.current != null) {
+      const el = listRef.current;
+      if (el) el.scrollTop = el.scrollHeight - prependRef.current;
+      prependRef.current = null;
+      return;
+    }
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
@@ -125,16 +162,19 @@ export default function GroupChatWindow({ group, onBack }) {
       .select('*, sender:profiles!group_messages_sender_id_fkey(id, username, avatar_url)')
       .eq('group_id', group.id)
       .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
-      .order('created_at', { ascending: true });
-    setMessages(data || []);
+      .order('created_at', { ascending: false })
+      .limit(PAGE_SIZE);
+    const list = (data || []).slice().reverse();
+    setMessages(list);
+    setHasMore((data || []).length === PAGE_SIZE);
 
-    if (data?.length) {
+    if (list.length) {
       const { data: reactions } = await supabase
         .from('group_message_reactions')
         .select('*')
         .in(
           'message_id',
-          data.map((m) => m.id)
+          list.map((m) => m.id)
         );
       const grouped = {};
       (reactions || []).forEach((r) => {
@@ -143,16 +183,68 @@ export default function GroupChatWindow({ group, onBack }) {
       });
       setReactionsByMessage(grouped);
     }
+
+    // Keep the pinned banner even if the pin is older than the first page
+    const { data: pinned } = await supabase
+      .from('group_messages')
+      .select('*, sender:profiles!group_messages_sender_id_fkey(id, username, avatar_url)')
+      .eq('group_id', group.id)
+      .not('pinned_at', 'is', null)
+      .is('deleted_at', null)
+      .order('pinned_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    setFetchedPinned(pinned ?? null);
+  }
+
+  async function loadOlder() {
+    if (loadingOlder || messages.length === 0) return;
+    setLoadingOlder(true);
+    const { data, error } = await supabase
+      .from('group_messages')
+      .select('*, sender:profiles!group_messages_sender_id_fkey(id, username, avatar_url)')
+      .eq('group_id', group.id)
+      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+      .lt('created_at', messages[0].created_at)
+      .order('created_at', { ascending: false })
+      .limit(PAGE_SIZE);
+
+    if (!error && data) {
+      const older = data.slice().reverse();
+      prependRef.current = listRef.current?.scrollHeight ?? 0;
+      setMessages((prev) => [...older, ...prev]);
+      setHasMore(data.length === PAGE_SIZE);
+      if (older.length) {
+        const { data: rx } = await supabase
+          .from('group_message_reactions')
+          .select('*')
+          .in('message_id', older.map((m) => m.id));
+        if (rx?.length) {
+          setReactionsByMessage((prev) => {
+            const next = { ...prev };
+            rx.forEach((r) => {
+              next[r.message_id] = [...(next[r.message_id] || []), r];
+            });
+            return next;
+          });
+        }
+      }
+    }
+    setLoadingOlder(false);
   }
 
   async function loadMembers() {
     const { data } = await supabase
       .from('group_members')
-      .select('user_id, last_read_at, profiles(id, username, avatar_url)')
+      .select('user_id, last_read_at, role, profiles(id, username, avatar_url)')
       .eq('group_id', group.id);
-    setMembers(
-      (data || []).map((r) => ({ ...r.profiles, last_read_at: r.last_read_at })).filter((m) => m.id)
-    );
+    const list = (data || [])
+      .map((r) => ({ ...r.profiles, last_read_at: r.last_read_at, role: r.role }))
+      .filter((m) => m.id);
+    membersRef.current = list;
+    setMembers(list);
+    // If this person was removed from the group while it was open, close it
+    if (data && list.length > 0 && !list.some((m) => m.id === user.id)) onBack();
   }
 
   async function loadGroupSettings() {
@@ -165,11 +257,86 @@ export default function GroupChatWindow({ group, onBack }) {
   }
 
   async function markRead() {
-    await supabase
+    await markGroupRead(group.id);
+  }
+
+  const isAdmin = members.find((m) => m.id === user.id)?.role === 'admin';
+  const isCreator = group.created_by === user.id;
+
+  async function changeRole(memberId, role) {
+    setPanelError('');
+    const { error } = await supabase
       .from('group_members')
-      .update({ last_read_at: new Date().toISOString() })
+      .update({ role })
+      .eq('group_id', group.id)
+      .eq('user_id', memberId);
+    if (error) setPanelError(error.message);
+    loadMembers();
+  }
+
+  async function removeMember(member) {
+    if (!window.confirm(`Remove ${member.username} from this group?`)) return;
+    setPanelError('');
+    const { error } = await supabase
+      .from('group_members')
+      .delete()
+      .eq('group_id', group.id)
+      .eq('user_id', member.id);
+    if (error) setPanelError(error.message);
+    loadMembers();
+  }
+
+  async function leaveGroup() {
+    if (!window.confirm('Leave this group? You will stop receiving its messages.')) return;
+    const { error } = await supabase
+      .from('group_members')
+      .delete()
       .eq('group_id', group.id)
       .eq('user_id', user.id);
+    if (error) setPanelError(error.message);
+    else onBack();
+  }
+
+  async function deleteGroup() {
+    if (!window.confirm('Delete this group for everyone? All of its messages will be removed. This cannot be undone.')) return;
+    const { error } = await supabase.from('groups').delete().eq('id', group.id);
+    if (error) setPanelError(error.message);
+    else onBack();
+  }
+
+  async function openAddMembers() {
+    setPanelError('');
+    const { data, error } = await supabase
+      .from('friendships')
+      .select(
+        `requester_id, addressee_id,
+         requester:profiles!friendships_requester_id_fkey(id, username, avatar_url),
+         addressee:profiles!friendships_addressee_id_fkey(id, username, avatar_url)`
+      )
+      .eq('status', 'accepted')
+      .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`);
+    if (error) {
+      setPanelError(error.message);
+      return;
+    }
+    const memberIds = new Set(members.map((m) => m.id));
+    const friends = (data || [])
+      .map((row) => (row.requester_id === user.id ? row.addressee : row.requester))
+      .filter((f) => f && !memberIds.has(f.id));
+    setAddCandidates(friends);
+  }
+
+  async function addMember(friend) {
+    setPanelError('');
+    const { error } = await supabase
+      .from('group_members')
+      .insert({ group_id: group.id, user_id: friend.id });
+    if (error) {
+      setPanelError(error.message);
+      return;
+    }
+    setAddCandidates((list) => (list || []).filter((f) => f.id !== friend.id));
+    loadMembers();
   }
 
   async function updateDisappearing(seconds) {
@@ -203,19 +370,6 @@ export default function GroupChatWindow({ group, onBack }) {
     setMentionQuery(null);
   }
 
-  async function notifyRecipients(content, mentionedIds) {
-    const others = members.filter((m) => m.id !== user.id);
-    for (const m of others) {
-      const isMentioned = mentionedIds.includes(m.id);
-      sendPushNotification(
-        m.id,
-        isMentioned ? `${profile?.username} mentioned you in ${group.name}` : group.name,
-        content || 'Sent an attachment',
-        '/'
-      );
-    }
-  }
-
   async function sendMessage(e) {
     e?.preventDefault();
     const content = text.trim();
@@ -241,7 +395,6 @@ export default function GroupChatWindow({ group, onBack }) {
       expires_at: expiresAt,
     });
 
-    notifyRecipients(content, mentionedIds);
   }
 
   async function sendAttachmentMessage({ attachment_url, attachment_type, attachment_name }) {
@@ -256,7 +409,6 @@ export default function GroupChatWindow({ group, onBack }) {
       attachment_name,
       expires_at: expiresAt,
     });
-    notifyRecipients(attachment_type === 'gif' ? 'Sent a GIF' : 'Sent an attachment', []);
   }
 
   async function handleAttachmentPick(e) {
@@ -334,7 +486,8 @@ export default function GroupChatWindow({ group, onBack }) {
       ? members.filter((m) => m.id !== user.id && m.username.toLowerCase().startsWith(mentionQuery))
       : [];
 
-  const pinnedMessage = [...messages].reverse().find((m) => m.pinned_at && !m.deleted_at);
+  const pinnedMessage =
+    [...messages].reverse().find((m) => m.pinned_at && !m.deleted_at) ?? fetchedPinned;
 
   const lastMessage = messages[messages.length - 1];
   const seenByCount =
@@ -401,16 +554,77 @@ export default function GroupChatWindow({ group, onBack }) {
 
       {showMembers && (
         <div className="group-members-panel">
-          {members.map((m) => (
-            <div key={m.id} className="group-member-row">
-              <Avatar url={m.avatar_url} name={m.username} size={26} />
-              <span>{m.username}</span>
+          {members.map((m) => {
+            const memberIsCreator = m.id === group.created_by;
+            return (
+              <div key={m.id} className="group-member-row">
+                <Avatar url={m.avatar_url} name={m.username} size={26} />
+                <span className="group-member-name">{m.username}</span>
+                {m.role === 'admin' && (
+                  <span className="role-tag">{memberIsCreator ? 'Creator' : 'Admin'}</span>
+                )}
+                {isAdmin && m.id !== user.id && !memberIsCreator && (
+                  <span className="member-actions">
+                    <button
+                      type="button"
+                      className="member-action-btn"
+                      onClick={() => changeRole(m.id, m.role === 'admin' ? 'member' : 'admin')}
+                    >
+                      {m.role === 'admin' ? 'Remove admin' : 'Make admin'}
+                    </button>
+                    <button type="button" className="member-action-btn danger" onClick={() => removeMember(m)}>
+                      Remove
+                    </button>
+                  </span>
+                )}
+              </div>
+            );
+          })}
+          {panelError && <p className="error-text small">{panelError}</p>}
+          {isAdmin && (
+            <div className="group-add-members">
+              {addCandidates === null ? (
+                <button type="button" className="member-action-btn" onClick={openAddMembers}>
+                  ＋ Add members
+                </button>
+              ) : (
+                <>
+                  <div className="group-add-header">
+                    <span>Add friends</span>
+                    <button type="button" className="member-action-btn" onClick={() => setAddCandidates(null)}>
+                      Done
+                    </button>
+                  </div>
+                  {addCandidates.length === 0 && <p className="dim small">All your friends are already in this group.</p>}
+                  {addCandidates.map((f) => (
+                    <div key={f.id} className="group-member-row">
+                      <Avatar url={f.avatar_url} name={f.username} size={26} />
+                      <span className="group-member-name">{f.username}</span>
+                      <button type="button" className="member-action-btn" onClick={() => addMember(f)}>
+                        Add
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
-          ))}
+          )}
+          <div className="group-danger-row">
+            {isCreator ? (
+              <button type="button" className="member-action-btn danger" onClick={deleteGroup}>
+                Delete group
+              </button>
+            ) : (
+              <button type="button" className="member-action-btn danger" onClick={leaveGroup}>
+                Leave group
+              </button>
+            )}
+          </div>
           <div className="disappearing-row">
             <span>⏱ Disappearing messages</span>
             <select
               value={disappearingSeconds}
+              disabled={!isAdmin}
               onChange={(e) => updateDisappearing(Number(e.target.value))}
             >
               {DISAPPEAR_OPTIONS.map((o) => (
@@ -430,7 +644,12 @@ export default function GroupChatWindow({ group, onBack }) {
         </div>
       )}
 
-      <div className="chat-messages">
+      <div className="chat-messages" ref={listRef}>
+        {hasMore && (
+          <button type="button" className="load-older-btn" onClick={loadOlder} disabled={loadingOlder}>
+            {loadingOlder ? 'Loading…' : 'Load earlier messages'}
+          </button>
+        )}
         {messages.map((m, idx) => {
           const isMine = m.sender_id === user.id;
           const quoted = m.reply_to_id ? messages.find((x) => x.id === m.reply_to_id) : null;
@@ -595,6 +814,7 @@ export default function GroupChatWindow({ group, onBack }) {
         >
           😊
         </button>
+        {gifsEnabled && (
         <button
           type="button"
           className="attach-btn"
@@ -603,6 +823,7 @@ export default function GroupChatWindow({ group, onBack }) {
         >
           GIF
         </button>
+        )}
         <button
           type="button"
           className="attach-btn"
@@ -641,7 +862,7 @@ export default function GroupChatWindow({ group, onBack }) {
         </div>
       )}
 
-      {showGifPicker && <GifPicker onSelect={handleGifSelect} onClose={() => setShowGifPicker(false)} />}
+      {gifsEnabled && showGifPicker && <GifPicker onSelect={handleGifSelect} onClose={() => setShowGifPicker(false)} />}
 
       {forwardingMessage && (
         <ForwardModal message={forwardingMessage} onClose={() => setForwardingMessage(null)} />

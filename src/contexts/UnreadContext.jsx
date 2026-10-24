@@ -1,20 +1,26 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from './AuthContext.jsx';
+import { useChatPrefs } from './ChatPrefsContext.jsx';
 
 const UnreadContext = createContext(null);
 
 export function UnreadProvider({ children }) {
   const { user } = useAuth();
-  // { [senderId]: count }
+  const { getPref } = useChatPrefs();
+  // { [senderId]: count } for direct chats, { [groupId]: count } for groups
   const [counts, setCounts] = useState({});
+  const [groupCounts, setGroupCounts] = useState({});
+  const activeGroupRef = useRef(null);
 
   useEffect(() => {
     if (!user) {
       setCounts({});
-      return;
+      setGroupCounts({});
+      return undefined;
     }
     loadCounts();
+    loadGroupCounts();
 
     const channel = supabase
       .channel(`unread-${user.id}`)
@@ -26,16 +32,37 @@ export function UnreadProvider({ children }) {
           setCounts((prev) => ({ ...prev, [senderId]: (prev[senderId] || 0) + 1 }));
         }
       )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'group_messages' },
+        (payload) => {
+          const m = payload.new;
+          if (m.sender_id === user.id || m.deleted_at) return;
+          if (activeGroupRef.current === m.group_id) return;
+          setGroupCounts((prev) => ({ ...prev, [m.group_id]: (prev[m.group_id] || 0) + 1 }));
+        }
+      )
       .subscribe();
 
     return () => supabase.removeChannel(channel);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  // Muted chats stay visible in the list but don't count toward the
+  // browser-tab title or the app-icon badge.
+  const total =
+    Object.entries(counts).reduce((sum, [id, n]) => sum + (getPref('f', id).muted ? 0 : n), 0) +
+    Object.entries(groupCounts).reduce((sum, [id, n]) => sum + (getPref('g', id).muted ? 0 : n), 0);
+
   useEffect(() => {
-    const total = Object.values(counts).reduce((a, b) => a + b, 0);
     document.title = total > 0 ? `(${total}) Dragon Chat` : 'Dragon Chat';
-  }, [counts]);
+    try {
+      if (total > 0 && navigator.setAppBadge) navigator.setAppBadge(total);
+      else if (navigator.clearAppBadge) navigator.clearAppBadge();
+    } catch {
+      // Badging isn't supported everywhere — ignore.
+    }
+  }, [total]);
 
   async function loadCounts() {
     const { data, error } = await supabase
@@ -50,6 +77,16 @@ export function UnreadProvider({ children }) {
       next[row.sender_id] = (next[row.sender_id] || 0) + 1;
     }
     setCounts(next);
+  }
+
+  async function loadGroupCounts() {
+    const { data, error } = await supabase.rpc('group_unread_counts');
+    if (error) return;
+    const next = {};
+    (data || []).forEach((row) => {
+      if (Number(row.unread) > 0) next[row.group_id] = Number(row.unread);
+    });
+    setGroupCounts(next);
   }
 
   // Call when opening a chat with `friendId` — marks their messages to
@@ -70,10 +107,32 @@ export function UnreadProvider({ children }) {
       .is('read_at', null);
   }
 
-  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  const markGroupRead = useCallback(
+    async (groupId) => {
+      setGroupCounts((prev) => {
+        if (!prev[groupId]) return prev;
+        const next = { ...prev };
+        delete next[groupId];
+        return next;
+      });
+      if (!user) return;
+      await supabase
+        .from('group_members')
+        .update({ last_read_at: new Date().toISOString() })
+        .eq('group_id', groupId)
+        .eq('user_id', user.id);
+    },
+    [user]
+  );
+
+  const setActiveGroup = useCallback((groupId) => {
+    activeGroupRef.current = groupId;
+  }, []);
 
   return (
-    <UnreadContext.Provider value={{ counts, total, markRead }}>{children}</UnreadContext.Provider>
+    <UnreadContext.Provider value={{ counts, groupCounts, total, markRead, markGroupRead, setActiveGroup }}>
+      {children}
+    </UnreadContext.Provider>
   );
 }
 

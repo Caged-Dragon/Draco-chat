@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { usePresence } from '../contexts/PresenceContext.jsx';
 import { useUnread } from '../contexts/UnreadContext.jsx';
+import { useChatPrefs } from '../contexts/ChatPrefsContext.jsx';
 import Avatar from './Avatar.jsx';
 import ReportModal from './ReportModal.jsx';
 import { formatLastSeen } from '../utils/format.js';
@@ -11,6 +12,8 @@ export default function FriendsList({ refreshKey, activeFriendId, onSelectFriend
   const { user } = useAuth();
   const { isOnline } = usePresence();
   const { counts } = useUnread();
+  const { getPref, setPref } = useChatPrefs();
+  const [showArchived, setShowArchived] = useState(false);
   const [friends, setFriends] = useState([]);
   const [blockedIds, setBlockedIds] = useState(new Set());
   const [openMenuId, setOpenMenuId] = useState(null);
@@ -116,57 +119,91 @@ export default function FriendsList({ refreshKey, activeFriendId, onSelectFriend
   }
 
   const visibleFriends = friends.filter((f) => !blockedIds.has(f.id));
+  const activeFriends = visibleFriends.filter((f) => !getPref('f', f.id).archived);
+  const archivedFriends = visibleFriends.filter((f) => getPref('f', f.id).archived);
+
+  function renderRow(f) {
+    const unread = counts?.[f.id] || 0;
+    const online = isOnline(f.id);
+    const pref = getPref('f', f.id);
+    return (
+      <li
+        key={f.id}
+        className={`friend-row ${f.id === activeFriendId ? 'active' : ''}`}
+        onClick={() => onSelectFriend(f)}
+      >
+        <Avatar url={f.avatar_url} name={f.username} size={34} online={online} showStatusDot />
+        <div className="friend-row-text">
+          <span className="friend-row-name">
+            {f.username}
+            {pref.muted && <span className="muted-icon" title="Muted"> 🔕</span>}
+          </span>
+          <span className="friend-row-sub">
+            {f.status_message || (online ? 'Online' : `Last seen ${formatLastSeen(f.last_seen_at)}`)}
+          </span>
+        </div>
+        {unread > 0 && <span className={`unread-badge${pref.muted ? ' muted' : ''}`}>{unread}</span>}
+        <button
+          className="friend-menu-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpenMenuId(openMenuId === f.id ? null : f.id);
+          }}
+          aria-label="Friend options"
+        >
+          ⋮
+        </button>
+        {openMenuId === f.id && (
+          <div className="friend-menu" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => {
+                setPref('f', f.id, { muted: !pref.muted });
+                setOpenMenuId(null);
+              }}
+            >
+              {pref.muted ? 'Unmute notifications' : 'Mute notifications'}
+            </button>
+            <button
+              onClick={() => {
+                setPref('f', f.id, { archived: !pref.archived });
+                setOpenMenuId(null);
+              }}
+            >
+              {pref.archived ? 'Unarchive chat' : 'Archive chat'}
+            </button>
+            <button onClick={() => handleUnfriend(f)}>Unfriend</button>
+            <button onClick={() => handleBlock(f)}>Block</button>
+            <button
+              onClick={() => {
+                setReportTarget(f);
+                setOpenMenuId(null);
+              }}
+            >
+              Report
+            </button>
+          </div>
+        )}
+      </li>
+    );
+  }
+
+  const archivedUnread = archivedFriends.reduce((sum, f) => sum + (counts?.[f.id] || 0), 0);
 
   return (
     <div className="friends-list">
       <h3>Friends</h3>
       {visibleFriends.length === 0 && <p className="dim small">No friends yet. Search above.</p>}
-      <ul>
-        {visibleFriends.map((f) => {
-          const unread = counts?.[f.id] || 0;
-          const online = isOnline(f.id);
-          return (
-            <li
-              key={f.id}
-              className={`friend-row ${f.id === activeFriendId ? 'active' : ''}`}
-              onClick={() => onSelectFriend(f)}
-            >
-              <Avatar url={f.avatar_url} name={f.username} size={34} online={online} showStatusDot />
-              <div className="friend-row-text">
-                <span className="friend-row-name">{f.username}</span>
-                <span className="friend-row-sub">
-                  {f.status_message || (online ? 'Online' : `Last seen ${formatLastSeen(f.last_seen_at)}`)}
-                </span>
-              </div>
-              {unread > 0 && <span className="unread-badge">{unread}</span>}
-              <button
-                className="friend-menu-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setOpenMenuId(openMenuId === f.id ? null : f.id);
-                }}
-                aria-label="Friend options"
-              >
-                ⋮
-              </button>
-              {openMenuId === f.id && (
-                <div className="friend-menu" onClick={(e) => e.stopPropagation()}>
-                  <button onClick={() => handleUnfriend(f)}>Unfriend</button>
-                  <button onClick={() => handleBlock(f)}>Block</button>
-                  <button
-                    onClick={() => {
-                      setReportTarget(f);
-                      setOpenMenuId(null);
-                    }}
-                  >
-                    Report
-                  </button>
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      <ul>{activeFriends.map(renderRow)}</ul>
+
+      {archivedFriends.length > 0 && (
+        <div className="archived-section">
+          <button type="button" className="archived-toggle" onClick={() => setShowArchived((v) => !v)}>
+            {showArchived ? '▾' : '▸'} Archived ({archivedFriends.length})
+            {!showArchived && archivedUnread > 0 && <span className="unread-badge muted">{archivedUnread}</span>}
+          </button>
+          {showArchived && <ul>{archivedFriends.map(renderRow)}</ul>}
+        </div>
+      )}
 
       {blockedIds.size > 0 && (
         <div className="blocked-section">

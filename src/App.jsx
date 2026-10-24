@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { useAuth } from './contexts/AuthContext.jsx';
 import Landing from './pages/Landing.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
-import ResetPassword from './pages/ResetPassword.jsx';
+const ResetPassword = lazy(() => import('./pages/ResetPassword.jsx'));
 import IncomingCallModal from './components/IncomingCallModal.jsx';
 import ActiveCallScreen from './components/ActiveCallScreen.jsx';
 import GroupCallScreen from './components/GroupCallScreen.jsx';
@@ -24,7 +24,11 @@ export default function App() {
   // session — intercept that before showing the normal dashboard so they
   // land on the "set a new password" screen instead.
   if (recoveryMode) {
-    return <ResetPassword />;
+    return (
+      <Suspense fallback={<div className="center-screen">Loading...</div>}>
+        <ResetPassword />
+      </Suspense>
+    );
   }
 
   let content;

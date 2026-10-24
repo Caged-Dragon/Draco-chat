@@ -1,5 +1,5 @@
 -- ============================================================
--- DRAGON CHAT — SUPABASE SCHEMA (v5.7, mirrors the live database)
+-- DRAGON CHAT — SUPABASE SCHEMA (v5.8, mirrors the live database)
 -- Fresh install: run this whole file once in
 --   Supabase Dashboard > SQL Editor.
 -- It is idempotent, so re-running it on an existing project is safe.
@@ -706,3 +706,313 @@ create trigger rate_limit_reports before insert on public.reports
 
 -- Trim client privileges that are never needed
 revoke truncate, references, trigger on all tables in schema public from authenticated;
+
+-- ============================================================
+-- v5.8 ADDITIONS (idempotent) — roles, search, server push,
+-- storage clean-up, error log, case-insensitive usernames
+-- ============================================================
+create extension if not exists pg_trgm with schema extensions;
+create extension if not exists pg_net with schema extensions;
+
+-- Case-insensitive unique usernames
+-- (if this fails, two existing usernames differ only by letter case: rename one first)
+create unique index if not exists profiles_username_lower_key on public.profiles (lower(username));
+
+-- ---- Group admin roles ----
+alter table public.group_members add column if not exists role text not null default 'member';
+alter table public.group_members drop constraint if exists group_members_role_check;
+alter table public.group_members add constraint group_members_role_check check (role in ('member','admin'));
+update public.group_members gm set role = 'admin'
+  from public.groups g where g.id = gm.group_id and g.created_by = gm.user_id and gm.role <> 'admin';
+
+create or replace function private.is_group_admin(p_group_id uuid, p_user_id uuid)
+returns boolean language sql security definer set search_path = '' as $$
+  select exists (select 1 from public.groups g where g.id = p_group_id and g.created_by = p_user_id)
+      or exists (select 1 from public.group_members gm
+                 where gm.group_id = p_group_id and gm.user_id = p_user_id and gm.role = 'admin');
+$$;
+revoke execute on function private.is_group_admin(uuid, uuid) from public, anon;
+grant execute on function private.is_group_admin(uuid, uuid) to authenticated;
+
+create or replace function private.set_member_role_on_insert()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if exists (select 1 from public.groups g where g.id = new.group_id and g.created_by = new.user_id) then
+    new.role := 'admin';
+  else
+    new.role := 'member';
+  end if;
+  return new;
+end; $$;
+revoke execute on function private.set_member_role_on_insert() from public, anon, authenticated;
+drop trigger if exists set_member_role_on_insert on public.group_members;
+create trigger set_member_role_on_insert before insert on public.group_members
+  for each row execute function private.set_member_role_on_insert();
+
+create or replace function private.guard_group_member_update()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if auth.uid() is null then return new; end if;
+  if new.group_id is distinct from old.group_id or new.user_id is distinct from old.user_id
+     or new.joined_at is distinct from old.joined_at then
+    raise exception 'Only role and last_read_at can be changed';
+  end if;
+  if new.role is distinct from old.role then
+    if not private.is_group_admin(old.group_id, auth.uid()) then
+      raise exception 'Only group admins can change roles';
+    end if;
+    if private.is_group_creator(old.group_id, old.user_id) then
+      raise exception 'The group creator is always an admin';
+    end if;
+  end if;
+  if new.last_read_at is distinct from old.last_read_at and auth.uid() <> old.user_id then
+    raise exception 'Only the member can update their own read marker';
+  end if;
+  return new;
+end; $$;
+
+drop policy if exists "Creator can add members" on public.group_members;
+drop policy if exists "Admins can add members" on public.group_members;
+create policy "Admins can add members" on public.group_members for insert to authenticated
+  with check (private.is_group_admin(group_id, (select auth.uid())));
+
+drop policy if exists "Members can leave or creator can remove" on public.group_members;
+drop policy if exists "Members can leave or admins can remove" on public.group_members;
+create policy "Members can leave or admins can remove" on public.group_members for delete to authenticated
+  using ((select auth.uid()) = user_id
+         or (private.is_group_admin(group_id, (select auth.uid())) and not private.is_group_creator(group_id, user_id)));
+
+drop policy if exists "Admins can change member roles" on public.group_members;
+create policy "Admins can change member roles" on public.group_members for update to authenticated
+  using (private.is_group_admin(group_id, (select auth.uid())))
+  with check (private.is_group_admin(group_id, (select auth.uid())));
+
+drop policy if exists "Creator can update group" on public.groups;
+drop policy if exists "Admins can update group" on public.groups;
+create policy "Admins can update group" on public.groups for update to authenticated
+  using (private.is_group_admin(id, (select auth.uid())))
+  with check (private.is_group_admin(id, (select auth.uid())));
+
+create or replace function private.guard_group_update()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if auth.uid() is null then return new; end if;
+  new.created_by := old.created_by;
+  new.created_at := old.created_at;
+  return new;
+end; $$;
+drop trigger if exists guard_group_update on public.groups;
+create trigger guard_group_update before update on public.groups
+  for each row execute function private.guard_group_update();
+
+-- ---- Unread counts for groups ----
+create or replace function public.group_unread_counts()
+returns table (group_id uuid, unread bigint)
+language sql stable security invoker set search_path = '' as $$
+  select gm.group_id, count(m.id)
+  from public.group_members gm
+  left join public.group_messages m
+    on m.group_id = gm.group_id
+   and m.created_at > coalesce(gm.last_read_at, gm.joined_at)
+   and m.sender_id <> gm.user_id
+   and m.deleted_at is null
+  where gm.user_id = (select auth.uid())
+  group by gm.group_id;
+$$;
+revoke execute on function public.group_unread_counts() from public, anon;
+grant execute on function public.group_unread_counts() to authenticated;
+
+-- ---- Fast message search ----
+create index if not exists messages_content_trgm on public.messages using gin (content extensions.gin_trgm_ops);
+create index if not exists group_messages_content_trgm on public.group_messages using gin (content extensions.gin_trgm_ops);
+
+-- ---- Server-side push: new message -> notify-message edge function ----
+alter table public.messages add column if not exists push_sent_at timestamptz;
+alter table public.group_messages add column if not exists push_sent_at timestamptz;
+
+create table if not exists private.app_config (key text primary key, value text not null);
+-- !! Replace YOUR-PROJECT-REF with your Supabase project reference, e.g. abcdefghijklmnop
+insert into private.app_config (key, value)
+  values ('functions_url', 'https://YOUR-PROJECT-REF.supabase.co/functions/v1')
+  on conflict (key) do nothing;
+
+create or replace function private.call_function(fn text, payload jsonb)
+returns void language plpgsql security definer set search_path = '' as $$
+declare base text;
+begin
+  select value into base from private.app_config where key = 'functions_url';
+  if base is null then return; end if;
+  perform net.http_post(
+    url := base || '/' || fn,
+    headers := '{"Content-Type":"application/json"}'::jsonb,
+    body := payload,
+    timeout_milliseconds := 5000
+  );
+exception when others then
+  null; -- a notification problem must never block the app
+end; $$;
+revoke execute on function private.call_function(text, jsonb) from public, anon, authenticated;
+
+create or replace function private.notify_new_message()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  perform private.call_function('notify-message', jsonb_build_object(
+    'type', case tg_table_name when 'messages' then 'dm' else 'group' end,
+    'id', new.id));
+  return new;
+end; $$;
+revoke execute on function private.notify_new_message() from public, anon, authenticated;
+drop trigger if exists notify_new_message on public.messages;
+create trigger notify_new_message after insert on public.messages
+  for each row execute function private.notify_new_message();
+drop trigger if exists notify_new_group_message on public.group_messages;
+create trigger notify_new_group_message after insert on public.group_messages
+  for each row execute function private.notify_new_message();
+
+-- ---- Storage clean-up queue (drained every 10 min by the cleanup-storage function) ----
+create table if not exists public.storage_cleanup_queue (
+  id bigint generated always as identity primary key,
+  bucket text not null,
+  path text not null,
+  created_at timestamptz not null default now()
+);
+alter table public.storage_cleanup_queue enable row level security;
+revoke all on public.storage_cleanup_queue from anon, authenticated;
+
+create or replace function private.enqueue_storage_delete(url text)
+returns void language plpgsql security definer set search_path = '' as $$
+declare m text[];
+begin
+  if url is null then return; end if;
+  m := regexp_match(url, '/storage/v1/object/(?:public|sign)/([^/]+)/([^?]+)');
+  if m is null then return; end if;
+  -- keep the file if another live message/status still points at it (e.g. forwarded copies)
+  if exists (select 1 from public.messages x where x.attachment_url = url and x.deleted_at is null)
+     or exists (select 1 from public.group_messages x where x.attachment_url = url and x.deleted_at is null)
+     or exists (select 1 from public.statuses x where x.media_url = url) then
+    return;
+  end if;
+  insert into public.storage_cleanup_queue (bucket, path) values (m[1], m[2]);
+end; $$;
+revoke execute on function private.enqueue_storage_delete(text) from public, anon, authenticated;
+
+create or replace function private.queue_file_on_row_change()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare col text := tg_argv[0];
+begin
+  if tg_op = 'DELETE' then
+    perform private.enqueue_storage_delete(to_jsonb(old) ->> col);
+  elsif tg_op = 'UPDATE' then
+    if (to_jsonb(old) ->> col) is distinct from (to_jsonb(new) ->> col) then
+      perform private.enqueue_storage_delete(to_jsonb(old) ->> col);
+    end if;
+  end if;
+  return null;
+end; $$;
+revoke execute on function private.queue_file_on_row_change() from public, anon, authenticated;
+
+create or replace function private.queue_file_on_soft_delete()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  perform private.enqueue_storage_delete(old.attachment_url);
+  return null;
+end; $$;
+revoke execute on function private.queue_file_on_soft_delete() from public, anon, authenticated;
+
+drop trigger if exists queue_file_messages_del on public.messages;
+create trigger queue_file_messages_del after delete on public.messages
+  for each row execute function private.queue_file_on_row_change('attachment_url');
+drop trigger if exists queue_file_messages_soft on public.messages;
+create trigger queue_file_messages_soft after update of deleted_at on public.messages
+  for each row when (old.deleted_at is null and new.deleted_at is not null)
+  execute function private.queue_file_on_soft_delete();
+drop trigger if exists queue_file_group_messages_del on public.group_messages;
+create trigger queue_file_group_messages_del after delete on public.group_messages
+  for each row execute function private.queue_file_on_row_change('attachment_url');
+drop trigger if exists queue_file_group_messages_soft on public.group_messages;
+create trigger queue_file_group_messages_soft after update of deleted_at on public.group_messages
+  for each row when (old.deleted_at is null and new.deleted_at is not null)
+  execute function private.queue_file_on_soft_delete();
+drop trigger if exists queue_file_statuses on public.statuses;
+create trigger queue_file_statuses after delete on public.statuses
+  for each row execute function private.queue_file_on_row_change('media_url');
+drop trigger if exists queue_file_profiles on public.profiles;
+create trigger queue_file_profiles after update of avatar_url or delete on public.profiles
+  for each row execute function private.queue_file_on_row_change('avatar_url');
+drop trigger if exists queue_file_groups on public.groups;
+create trigger queue_file_groups after update of avatar_url or delete on public.groups
+  for each row execute function private.queue_file_on_row_change('avatar_url');
+drop trigger if exists queue_file_user_settings on public.user_settings;
+create trigger queue_file_user_settings after update of wallpaper_url or delete on public.user_settings
+  for each row execute function private.queue_file_on_row_change('wallpaper_url');
+drop trigger if exists queue_file_chat_settings on public.chat_settings;
+create trigger queue_file_chat_settings after update of wallpaper_url or delete on public.chat_settings
+  for each row execute function private.queue_file_on_row_change('wallpaper_url');
+
+select cron.unschedule(jobid) from cron.job where jobname = 'dracochat-cleanup-storage';
+select cron.schedule('dracochat-cleanup-storage', '*/10 * * * *', $$select private.call_function('cleanup-storage', '{}'::jsonb);$$);
+
+-- ---- Built-in client error log (view it in the Supabase table editor) ----
+create table if not exists public.client_errors (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references public.profiles(id) on delete cascade,
+  message text not null check (char_length(message) <= 1000),
+  stack text check (stack is null or char_length(stack) <= 4000),
+  url text check (url is null or char_length(url) <= 500),
+  user_agent text check (user_agent is null or char_length(user_agent) <= 300),
+  app_version text check (app_version is null or char_length(app_version) <= 30),
+  created_at timestamptz not null default now()
+);
+create index if not exists client_errors_created_idx on public.client_errors (created_at desc);
+create index if not exists client_errors_user_idx on public.client_errors (user_id);
+alter table public.client_errors enable row level security;
+drop policy if exists "Users can log their own client errors" on public.client_errors;
+create policy "Users can log their own client errors" on public.client_errors for insert to authenticated
+  with check ((select auth.uid()) = user_id);
+revoke select, update, delete on public.client_errors from authenticated;
+
+create or replace function private.enforce_rate_limit()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare recent int;
+begin
+  if auth.uid() is null then return new; end if;
+  if tg_table_name = 'messages' then
+    select count(*) into recent from public.messages
+      where sender_id = new.sender_id and created_at > now() - interval '10 seconds';
+    if recent >= 20 then raise exception 'You are sending messages too fast. Please slow down.' using errcode = 'P0001'; end if;
+  elsif tg_table_name = 'group_messages' then
+    select count(*) into recent from public.group_messages
+      where sender_id = new.sender_id and created_at > now() - interval '10 seconds';
+    if recent >= 20 then raise exception 'You are sending messages too fast. Please slow down.' using errcode = 'P0001'; end if;
+  elsif tg_table_name = 'friendships' then
+    select count(*) into recent from public.friendships
+      where requester_id = new.requester_id and created_at > now() - interval '1 hour';
+    if recent >= 30 then raise exception 'Too many friend requests. Please try again later.' using errcode = 'P0001'; end if;
+  elsif tg_table_name = 'reports' then
+    select count(*) into recent from public.reports
+      where reporter_id = new.reporter_id and created_at > now() - interval '1 day';
+    if recent >= 20 then raise exception 'Too many reports submitted today.' using errcode = 'P0001'; end if;
+  elsif tg_table_name = 'client_errors' then
+    select count(*) into recent from public.client_errors
+      where user_id = new.user_id and created_at > now() - interval '1 hour';
+    if recent >= 30 then raise exception 'Too many error reports.' using errcode = 'P0001'; end if;
+  end if;
+  return new;
+end; $$;
+drop trigger if exists rate_limit_client_errors on public.client_errors;
+create trigger rate_limit_client_errors before insert on public.client_errors
+  for each row execute function private.enforce_rate_limit();
+
+create or replace function private.purge_expired_content()
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  delete from public.messages where expires_at is not null and expires_at < now() - interval '1 minute';
+  delete from public.group_messages where expires_at is not null and expires_at < now() - interval '1 minute';
+  delete from public.statuses where expires_at < now() - interval '7 days';
+  delete from public.client_errors where created_at < now() - interval '30 days';
+  delete from public.storage_cleanup_queue where created_at < now() - interval '14 days';
+end; $$;
+
+drop policy if exists "No client access to the clean-up queue" on public.storage_cleanup_queue;
+create policy "No client access to the clean-up queue" on public.storage_cleanup_queue
+  for all to authenticated using (false) with check (false);

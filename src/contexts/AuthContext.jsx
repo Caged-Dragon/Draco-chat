@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
+import { setErrorReporterUser } from '../utils/errorReporter.js';
 
 const AuthContext = createContext(null);
 
@@ -42,6 +43,7 @@ export function AuthProvider({ children }) {
   // OAuth sign-ins land here too, since the DB trigger creates a profile
   // for every new auth.users row regardless of how they signed up.
   useEffect(() => {
+    setErrorReporterUser(session?.user?.id);
     if (!session?.user) {
       setProfile(null);
       return;

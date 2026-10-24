@@ -10,6 +10,41 @@ theming, status/stories, and more. Built by **Caged Dragon Studios**.
 
 ---
 
+## v5.8 — Features, server-side push, clean-up
+
+**New in the app**
+- **Mute & archive** chats and groups (⋮ menu). Muted chats don't count toward the
+  tab title / app-icon badge and send no push; archived chats move to a collapsible section.
+- **Group unread badges** plus an app-icon badge (where the browser supports it).
+- **Group admins:** make/remove admins, add friends to an existing group, remove
+  members, leave a group (creator can delete it).
+- **Load earlier messages** (50 at a time) in direct and group chats, and **search across the
+  whole conversation** (not just what's loaded).
+- **Delete my account** (Settings) — removes the profile, messages and uploaded files.
+- **GIF picker now uses GIPHY** (Tenor's API was shut down). Set `VITE_GIPHY_API_KEY`;
+  without it the GIF button is hidden.
+- Live group messages now show the sender's name immediately.
+- Smaller first load: modals are lazy-loaded, vendor chunks split, offline cache cut from ~3.2 MB to ~1 MB.
+
+**Backend**
+- **Push is now sent by the database**: a trigger calls the `notify-message` edge function for every
+  new message (respecting mute and blocks). The browser no longer calls `send-push` (deprecated).
+- **File clean-up:** files are deleted a few minutes after their message/status/avatar is removed or expires
+  (queue + `cleanup-storage` function + pg_cron). A file still used by a forwarded copy is kept.
+- **Built-in error log:** uncaught client errors are saved to `public.client_errors` (30-day retention).
+- Case-insensitive unique usernames; group roles enforced in the database.
+
+**Deploying the backend (new project)**
+1. Run `supabase/schema.sql`, then edit the one row it seeds in `private.app_config`
+   (`functions_url` → `https://<your-ref>.supabase.co/functions/v1`).
+2. `supabase functions deploy notify-message --no-verify-jwt`
+   `supabase functions deploy cleanup-storage --no-verify-jwt`
+   `supabase functions deploy delete-account`
+3. `supabase secrets set VAPID_PUBLIC_KEY=… VAPID_PRIVATE_KEY=… VAPID_SUBJECT=mailto:you@example.com`
+
+**Tests:** `npm test` (unit tests) and `supabase/tests/rls_smoke.sql` (database rules; rolls itself back).
+`npm run types` regenerates TypeScript types from the database (needs the Supabase CLI).
+
 ## v5.7 — Security & database clean-up, legal pages
 
 - **Privacy Policy** (`public/privacy.html` → `/privacy.html`) and **Terms &

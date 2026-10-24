@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react';
+import { supabase } from '../supabaseClient';
+import { useAuth } from '../contexts/AuthContext.jsx';
 import { useTheme } from '../contexts/ThemeContext.jsx';
 import { THEME_TABS, DARK_THEME, DEFAULT_THEME } from '../theme/fields.js';
 import AppPreviewMock from './AppPreviewMock.jsx';
@@ -10,6 +12,11 @@ export default function SettingsModal({ onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
+  const { signOut } = useAuth();
+  const [showDelete, setShowDelete] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const currentTab = THEME_TABS.find((t) => t.id === activeTab);
 
@@ -25,6 +32,20 @@ export default function SettingsModal({ onClose }) {
     const { error } = await uploadWallpaper(file);
     if (error) setError(error.message);
     setBusy(false);
+  }
+
+  async function handleDeleteAccount() {
+    setDeleting(true);
+    setDeleteError('');
+    const { data, error } = await supabase.functions.invoke('delete-account', {
+      body: { confirm: 'DELETE' },
+    });
+    if (error || data?.error) {
+      setDeleteError(data?.error || error?.message || 'Could not delete the account.');
+      setDeleting(false);
+      return;
+    }
+    await signOut();
   }
 
   async function handleReset() {
@@ -115,6 +136,51 @@ export default function SettingsModal({ onClose }) {
         </div>
 
         {error && <p className="error-text">{error}</p>}
+
+        <div className="danger-zone">
+          {!showDelete ? (
+            <button type="button" className="danger-link" onClick={() => setShowDelete(true)}>
+              Delete my account…
+            </button>
+          ) : (
+            <div className="danger-confirm">
+              <p className="small">
+                This permanently deletes your profile, messages, files, statuses and friendships. Groups you
+                created are deleted for everyone. This cannot be undone.
+              </p>
+              <input
+                type="text"
+                placeholder='Type DELETE to confirm'
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                autoCapitalize="characters"
+              />
+              {deleteError && <p className="error-text small">{deleteError}</p>}
+              <div className="danger-actions">
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => {
+                    setShowDelete(false);
+                    setConfirmText('');
+                    setDeleteError('');
+                  }}
+                  disabled={deleting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="danger-btn"
+                  onClick={handleDeleteAccount}
+                  disabled={confirmText !== 'DELETE' || deleting}
+                >
+                  {deleting ? 'Deleting…' : 'Delete forever'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         <p className="legal-links">
           <a href="/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>

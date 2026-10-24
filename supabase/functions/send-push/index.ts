@@ -1,3 +1,7 @@
+// DEPRECATED in v5.8: push notifications are now sent by the database trigger
+// -> notify-message function. The app no longer calls this endpoint; it is kept
+// only for backwards compatibility and can be deleted from your project.
+
 // Supabase Edge Function: send-push
 //
 // Deploy with: supabase functions deploy send-push        (JWT verification stays ON)

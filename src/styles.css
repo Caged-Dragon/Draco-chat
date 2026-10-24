@@ -2275,7 +2275,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 140px;
+  max-height: 260px;
   overflow-y: auto;
 }
 
@@ -2875,4 +2875,156 @@ body {
 }
 .legal-consent {
   margin: 14px 0 6px;
+}
+
+
+/* ============================================================
+   v5.8 — mute / archive, group admin tools, pagination
+   ============================================================ */
+.friends-list li.group-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+.group-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.unread-badge.muted {
+  background: var(--text-dim);
+}
+.muted-icon {
+  font-size: 11px;
+  opacity: 0.8;
+}
+.archived-section {
+  margin-top: 6px;
+}
+.archived-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 4px;
+  cursor: pointer;
+  text-align: left;
+}
+.load-older-btn {
+  align-self: center;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+.load-older-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.group-member-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.role-tag {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--purple);
+  border: 1px solid var(--purple);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.member-actions {
+  display: flex;
+  gap: 6px;
+}
+.member-action-btn {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.member-action-btn.danger {
+  color: var(--red);
+  border-color: var(--red);
+}
+.group-add-members,
+.group-danger-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.group-add-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 700;
+}
+.group-danger-row {
+  align-items: flex-start;
+}
+
+.gif-attribution {
+  text-align: right;
+  font-size: 10px;
+  margin: 4px 6px 0;
+}
+
+.danger-zone {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.danger-link {
+  background: none;
+  border: none;
+  color: var(--red);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+.danger-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.danger-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.danger-btn {
+  background: var(--red);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.danger-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

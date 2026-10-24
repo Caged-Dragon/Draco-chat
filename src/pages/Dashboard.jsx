@@ -1,17 +1,17 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import FriendRequests from '../components/FriendRequests.jsx';
 import FriendsList from '../components/FriendsList.jsx';
 import SearchFriends from '../components/SearchFriends.jsx';
 import ChatWindow from '../components/ChatWindow.jsx';
-import SettingsModal from '../components/SettingsModal.jsx';
-import ProfileModal from '../components/ProfileModal.jsx';
-import CallHistoryModal from '../components/CallHistoryModal.jsx';
+const SettingsModal = lazy(() => import('../components/SettingsModal.jsx'));
+const ProfileModal = lazy(() => import('../components/ProfileModal.jsx'));
+const CallHistoryModal = lazy(() => import('../components/CallHistoryModal.jsx'));
 import GroupsList from '../components/GroupsList.jsx';
 import GroupChatWindow from '../components/GroupChatWindow.jsx';
 import Avatar from '../components/Avatar.jsx';
 import StatusBar from '../components/StatusBar.jsx';
-import GlobalSearchModal from '../components/GlobalSearchModal.jsx';
+const GlobalSearchModal = lazy(() => import('../components/GlobalSearchModal.jsx'));
 import { useViewportWidth } from '../hooks/useViewportWidth.js';
 
 export default function Dashboard() {
@@ -104,16 +104,18 @@ export default function Dashboard() {
         )}
       </main>
 
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
-      {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
-      {showCallHistory && <CallHistoryModal onClose={() => setShowCallHistory(false)} />}
-      {showGlobalSearch && (
-        <GlobalSearchModal
-          onClose={() => setShowGlobalSearch(false)}
-          onOpenFriend={selectFriend}
-          onOpenGroup={selectGroup}
-        />
-      )}
+      <Suspense fallback={null}>
+        {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+        {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
+        {showCallHistory && <CallHistoryModal onClose={() => setShowCallHistory(false)} />}
+        {showGlobalSearch && (
+          <GlobalSearchModal
+            onClose={() => setShowGlobalSearch(false)}
+            onOpenFriend={selectFriend}
+            onOpenGroup={selectGroup}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

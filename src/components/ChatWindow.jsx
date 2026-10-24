@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { usePresence } from '../contexts/PresenceContext.jsx';
@@ -7,12 +7,11 @@ import { useCall } from '../contexts/CallContext.jsx';
 import ChatThemeModal from './ChatThemeModal.jsx';
 import MessageBubble from './MessageBubble.jsx';
 import Avatar from './Avatar.jsx';
-import GifPicker from './GifPicker.jsx';
+import GifPicker, { gifsEnabled } from './GifPicker.jsx';
 import ForwardModal from './ForwardModal.jsx';
 import { computeGradient } from '../theme/fields.js';
 import { QUICK_EMOJIS, formatLastSeen } from '../utils/format.js';
 import { useViewportWidth } from '../hooks/useViewportWidth.js';
-import { sendPushNotification } from '../hooks/usePushNotifications.js';
 
 function sameId(a, b) {
   return (
@@ -24,9 +23,10 @@ function sameId(a, b) {
 
 const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024; // 15MB
 const TYPING_STOP_DELAY = 3000;
+const PAGE_SIZE = 50;
 
 export default function ChatWindow({ friend, onBack }) {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const { isOnline } = usePresence();
   const { markRead } = useUnread();
   const { startCall, callState } = useCall();
@@ -46,6 +46,10 @@ export default function ChatWindow({ friend, onBack }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [disappearingSeconds, setDisappearingSeconds] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [searchResults, setSearchResults] = useState(null);
+  const [fetchedPinned, setFetchedPinned] = useState(null);
 
   // This chat's OWN theme overrides only — merged on top of the global
   // theme via inline CSS variables scoped to this component's root div.
@@ -53,6 +57,8 @@ export default function ChatWindow({ friend, onBack }) {
   const [chatWallpaper, setChatWallpaper] = useState(null);
 
   const bottomRef = useRef(null);
+  const listRef = useRef(null);
+  const prependRef = useRef(null);
   const fileInputRef = useRef(null);
   const chatChannelRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -91,6 +97,7 @@ export default function ChatWindow({ friend, onBack }) {
             (sameId(m.sender_id, friend.id) && sameId(m.receiver_id, user.id));
           if (belongsHere) {
             setMessages((prev) => prev.map((old) => (old.id === m.id ? m : old)));
+            setFetchedPinned((fp) => (fp && fp.id === m.id ? (m.pinned_at && !m.deleted_at ? m : null) : fp));
           }
         }
       )
@@ -114,9 +121,43 @@ export default function ChatWindow({ friend, onBack }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [friend.id]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    // When older messages are prepended, keep the reader where they were
+    // instead of jumping to the bottom.
+    if (prependRef.current != null) {
+      const el = listRef.current;
+      if (el) el.scrollTop = el.scrollHeight - prependRef.current;
+      prependRef.current = null;
+      return;
+    }
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Server-side search across the whole conversation (not just loaded messages)
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setSearchResults(null);
+      return undefined;
+    }
+    const timer = setTimeout(async () => {
+      const safe = q.replace(/[\\%_]/g, (c) => `\\${c}`);
+      const { data } = await supabase
+        .from('messages')
+        .select('*')
+        .or(
+          `and(sender_id.eq.${user.id},receiver_id.eq.${friend.id}),and(sender_id.eq.${friend.id},receiver_id.eq.${user.id})`
+        )
+        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+        .is('deleted_at', null)
+        .ilike('content', `%${safe}%`)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      setSearchResults((data || []).slice().reverse());
+    }, 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, friend.id]);
 
   async function loadMessages() {
     const nowIso = new Date().toISOString();
@@ -127,14 +168,69 @@ export default function ChatWindow({ friend, onBack }) {
         `and(sender_id.eq.${user.id},receiver_id.eq.${friend.id}),and(sender_id.eq.${friend.id},receiver_id.eq.${user.id})`
       )
       .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: false })
+      .limit(PAGE_SIZE);
 
     if (error) {
       console.error(error);
       return;
     }
-    setMessages(data);
-    if (data.length) loadReactions(data.map((m) => m.id));
+    const list = data.slice().reverse();
+    setMessages(list);
+    setHasMore(data.length === PAGE_SIZE);
+    if (list.length) loadReactions(list.map((m) => m.id));
+
+    // The pinned banner should survive even if the pin is older than the first page
+    const { data: pinned } = await supabase
+      .from('messages')
+      .select('*')
+      .or(
+        `and(sender_id.eq.${user.id},receiver_id.eq.${friend.id}),and(sender_id.eq.${friend.id},receiver_id.eq.${user.id})`
+      )
+      .not('pinned_at', 'is', null)
+      .is('deleted_at', null)
+      .order('pinned_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    setFetchedPinned(pinned ?? null);
+  }
+
+  async function loadOlder() {
+    if (loadingOlder || messages.length === 0) return;
+    setLoadingOlder(true);
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .or(
+        `and(sender_id.eq.${user.id},receiver_id.eq.${friend.id}),and(sender_id.eq.${friend.id},receiver_id.eq.${user.id})`
+      )
+      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+      .lt('created_at', messages[0].created_at)
+      .order('created_at', { ascending: false })
+      .limit(PAGE_SIZE);
+
+    if (!error && data) {
+      const older = data.slice().reverse();
+      prependRef.current = listRef.current?.scrollHeight ?? 0;
+      setMessages((prev) => [...older, ...prev]);
+      setHasMore(data.length === PAGE_SIZE);
+      if (older.length) {
+        const { data: rx } = await supabase
+          .from('message_reactions')
+          .select('*')
+          .in('message_id', older.map((m) => m.id));
+        if (rx?.length) {
+          setReactionsByMessage((prev) => {
+            const next = { ...prev };
+            rx.forEach((r) => {
+              next[r.message_id] = [...(next[r.message_id] || []), r];
+            });
+            return next;
+          });
+        }
+      }
+    }
+    setLoadingOlder(false);
   }
 
   async function loadReactions(messageIds) {
@@ -234,7 +330,6 @@ export default function ChatWindow({ friend, onBack }) {
     });
 
     if (error) setAttachError(error.message);
-    else sendPushNotification(friend.id, profile?.username || 'New message', content, '/');
   }
 
   async function handleAttachmentPick(e) {
@@ -275,7 +370,6 @@ export default function ChatWindow({ friend, onBack }) {
     });
 
     if (insertError) setAttachError(insertError.message);
-    else sendPushNotification(friend.id, profile?.username || 'New message', 'Sent an attachment', '/');
     setUploading(false);
   }
 
@@ -293,7 +387,6 @@ export default function ChatWindow({ friend, onBack }) {
       expires_at: expiresAt,
     });
     if (error) setAttachError(error.message);
-    else sendPushNotification(friend.id, profile?.username || 'New message', 'Sent a GIF', '/');
   }
 
   async function toggleRecording() {
@@ -380,11 +473,11 @@ export default function ChatWindow({ friend, onBack }) {
     setShowEmojiPicker(false);
   }
 
-  const filteredMessages = searchQuery.trim()
-    ? messages.filter((m) => m.content?.toLowerCase().includes(searchQuery.trim().toLowerCase()))
-    : messages;
+  const searching = searchQuery.trim().length >= 2;
+  const filteredMessages = searching ? searchResults ?? [] : messages;
 
-  const pinnedMessage = [...messages].reverse().find((m) => m.pinned_at && !m.deleted_at);
+  const pinnedMessage =
+    [...messages].reverse().find((m) => m.pinned_at && !m.deleted_at) ?? fetchedPinned;
 
   // Only the CSS variables this chat has actually overridden get
   // applied here — everything else falls through to the global theme
@@ -525,7 +618,15 @@ export default function ChatWindow({ friend, onBack }) {
         </div>
       )}
 
-      <div className="chat-messages">
+      <div className="chat-messages" ref={listRef}>
+        {hasMore && !searching && (
+          <button type="button" className="load-older-btn" onClick={loadOlder} disabled={loadingOlder}>
+            {loadingOlder ? 'Loading…' : 'Load earlier messages'}
+          </button>
+        )}
+        {searching && searchResults && searchResults.length === 0 && (
+          <p className="dim small" style={{ textAlign: 'center' }}>No messages match your search.</p>
+        )}
         {filteredMessages.map((m) => {
           const quoted = m.reply_to_id ? messages.find((x) => x.id === m.reply_to_id) : null;
           return (
@@ -542,7 +643,7 @@ export default function ChatWindow({ friend, onBack }) {
               onReply={() => setReplyingTo(m)}
               onForward={() => setForwardingMessage(m)}
               onTogglePin={() => handleTogglePin(m)}
-              highlight={!!searchQuery.trim()}
+              highlight={searching}
             />
           );
         })}
@@ -573,6 +674,7 @@ export default function ChatWindow({ friend, onBack }) {
         >
           😊
         </button>
+        {gifsEnabled && (
         <button
           type="button"
           className="attach-btn"
@@ -582,6 +684,7 @@ export default function ChatWindow({ friend, onBack }) {
         >
           GIF
         </button>
+        )}
         <button
           type="button"
           className="attach-btn"
@@ -630,7 +733,7 @@ export default function ChatWindow({ friend, onBack }) {
         </div>
       )}
 
-      {showGifPicker && <GifPicker onSelect={handleGifSelect} onClose={() => setShowGifPicker(false)} />}
+      {gifsEnabled && showGifPicker && <GifPicker onSelect={handleGifSelect} onClose={() => setShowGifPicker(false)} />}
 
       {forwardingMessage && (
         <ForwardModal message={forwardingMessage} onClose={() => setForwardingMessage(null)} />
